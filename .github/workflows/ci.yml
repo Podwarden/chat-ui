@@ -1,0 +1,23 @@
+name: CI
+
+# Builds and typechecks the public tree. There is no `npm test` step here:
+# tests/ (~5k lines of vitest/jsdom fixtures) is excluded from the public
+# snapshot by publish/exclude.txt — the private GitLab repo runs the suite
+# on every merge request instead. This is deliberate, not an oversight; see
+# CONTRIBUTING.md for the full mirror explanation.
+
+on:
+  pull_request:
+  push: { branches: [main] }
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22', cache: npm }
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run build

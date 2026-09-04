@@ -1,0 +1,53 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * `<ChatApp>`'s own root wrapper carries no background utility — it expects
+ * the HOST page to paint one (the same way a host provides the light/dark
+ * token overrides below). Skipping this is invisible in the light theme,
+ * where the browser's own default white happens to match `--chat-page`, but
+ * in the dark theme it leaves off-white `--chat-fg` text sitting directly on
+ * that same default white canvas outside any element that sets its own
+ * background — unreadable. Reading `--chat-page` here (rather than
+ * hardcoding a colour) keeps this in sync with the theme block below with
+ * zero duplication.
+ */
+html,
+body,
+#root {
+  height: 100%;
+  background-color: rgb(var(--chat-page));
+  color: rgb(var(--chat-fg));
+}
+
+/*
+ * The package ships a dark default for all 17 `--chat-*` tokens (imported in
+ * main.tsx from `@podwarden/chat-ui/theme.css`). This is the light half —
+ * exactly what the package README's "Theming" section asks a host to
+ * provide, keyed off `main.tsx`'s own `data-theme` attribute rather than the
+ * package's `[data-chat-theme]` (which is a scoping hook, not a light/dark
+ * switch — see src/theme/theme.css upstream).
+ *
+ * Selector specificity (element + attribute) beats the package's bare
+ * `:root`, so this wins regardless of CSS import order.
+ */
+html[data-theme='light'] {
+  --chat-page: 255 255 255;
+  --chat-surface: 248 250 252; /* slate-50 */
+  --chat-surface-2: 241 245 249; /* slate-100 */
+  --chat-rule: 226 232 240; /* slate-200 */
+  --chat-fg: 15 23 42; /* slate-900 */
+  --chat-on-accent: 255 255 255;
+  --chat-muted: 71 85 105; /* slate-600 */
+  --chat-dim: 100 116 139; /* slate-500 */
+  --chat-accent: 5 150 105; /* emerald-600 */
+  --chat-accent-strong: 4 120 87; /* emerald-700 */
+  --chat-user: 5 150 105;
+  --chat-warn: 217 119 6; /* amber-600 */
+  --chat-warn-dim: 253 230 138; /* amber-200 */
+  --chat-negative: 220 38 38; /* red-600 */
+  --chat-negative-dim: 254 226 226; /* red-100 */
+  --chat-positive: 4 120 87;
+  --chat-code: 248 250 252;
+}

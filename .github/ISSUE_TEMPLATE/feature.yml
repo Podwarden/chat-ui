@@ -1,0 +1,41 @@
+name: Feature request
+description: Suggest an improvement or a new capability for @podwarden/chat-ui.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing, a quick check: is this a small, well-scoped change, or
+        a larger feature? Per CONTRIBUTING.md, large changes are much cheaper
+        to discuss here first than to write and have go unported.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: The situation you're in and why the current API doesn't cover it.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What you'd like to see — an API sketch is welcome, doesn't need to be final.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds you're using today, or other approaches you weighed.
+
+  - type: checkboxes
+    id: willing
+    attributes:
+      label: Are you willing to open a PR for this?
+      description: Not required — just helps us prioritize.
+      options:
+        - label: I'd be willing to submit a PR for this change.
+          required: false

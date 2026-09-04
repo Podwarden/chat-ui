@@ -1,0 +1,74 @@
+name: Bug report
+description: Something in @podwarden/chat-ui isn't working as expected.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. This repo is a published
+        mirror (see CONTRIBUTING.md) — the more detail you give here, the
+        more likely it is we can reproduce and port a fix.
+
+  - type: input
+    id: package-version
+    attributes:
+      label: Package version
+      description: The `@podwarden/chat-ui` version from your package.json / lockfile.
+      placeholder: "0.1.6"
+    validations:
+      required: true
+
+  - type: input
+    id: contract-version
+    attributes:
+      label: Contract version
+      description: >
+        The `CONTRACT_VERSION` exported from `@podwarden/chat-ui/contract`,
+        or the value your backend reports. This is often the field that turns
+        "the stream hangs" into a diagnosable report — a UI/backend contract
+        mismatch looks like a bug in the UI until this is known.
+      placeholder: "e.g. 3"
+    validations:
+      required: true
+
+  - type: input
+    id: react-version
+    attributes:
+      label: React version
+      placeholder: "19.0.0"
+    validations:
+      required: true
+
+  - type: input
+    id: browser
+    attributes:
+      label: Browser / environment
+      description: Browser and OS, or "SSR" / "React Native" / etc. if not a browser.
+      placeholder: "Chrome 128 on macOS 15"
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you expected, and what actually happened.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: >
+        A minimal reproduction — ideally a fork of `examples/basic` with the
+        smallest change that shows the bug, or a code snippet plus steps.
+        Reports without a reproduction are much harder to port.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant console output / stack trace
+      render: shell

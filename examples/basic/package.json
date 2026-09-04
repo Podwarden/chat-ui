@@ -1,0 +1,24 @@
+{
+  "name": "chat-ui-basic-example",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Runnable example: @podwarden/chat-ui streaming chat with no backend at all.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@podwarden/chat-ui": "file:../..",
+    "react": "19.0.0",
+    "react-dom": "19.0.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.14",
+    "typescript": "5.6.3",
+    "vite": "^5.4.10"
+  }
+}

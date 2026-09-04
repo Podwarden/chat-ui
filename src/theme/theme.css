@@ -1,0 +1,36 @@
+/*
+ * Default values for the semantic `--chat-*` token set (spec §4.1).
+ *
+ * Every colour the package paints goes through one of these 17 tokens; no
+ * component names a literal palette colour. Values are space-separated
+ * `R G B` triplets (no `rgb()` wrapper) so Tailwind can compose them with an
+ * alpha channel: `rgb(var(--chat-surface) / <alpha-value>)`, which is what
+ * `bg-chat-surface/50` compiles to.
+ *
+ * The defaults below are the slate/emerald look the chat renders today. Hosts
+ * re-theme by redefining any subset of the tokens on `:root` after importing
+ * this file, or on an element carrying `data-chat-theme`.
+ */
+:root,
+[data-chat-theme] {
+  --chat-page: 2 6 23; /* slate-950 */
+  --chat-surface: 15 23 42; /* slate-900 */
+  --chat-surface-2: 30 41 59; /* slate-800 */
+  --chat-rule: 30 41 59; /* slate-800 */
+  --chat-fg: 241 245 249; /* slate-100 */
+  --chat-on-accent: 255 255 255; /* ink for text sitting ON a coloured fill
+                                    (accent / user / negative / warn); stays
+                                    legible when a host flips to a light theme,
+                                    where --chat-fg goes dark */
+  --chat-muted: 148 163 184; /* slate-400 */
+  --chat-dim: 100 116 139; /* slate-500 */
+  --chat-accent: 110 231 183; /* emerald-300 */
+  --chat-accent-strong: 52 211 153; /* emerald-400 */
+  --chat-user: 5 150 105; /* emerald-600 */
+  --chat-warn: 245 158 11; /* amber-500 */
+  --chat-warn-dim: 245 158 11;
+  --chat-negative: 248 113 113; /* red-400 */
+  --chat-negative-dim: 69 10 10; /* red-950 */
+  --chat-positive: 52 211 153;
+  --chat-code: 2 6 23;
+}
