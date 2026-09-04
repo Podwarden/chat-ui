@@ -2,7 +2,7 @@
 /**
  * One-shot codemod: rewrite the literal Tailwind palette classes in `src/**`
  * to the semantic `chat-*` tokens defined by `src/theme/theme.css` and
- * `tailwind-preset.cjs` (spec §4.1–4.2).
+ * `config/tailwind-preset.cjs` (spec §4.1–4.2).
  *
  * Kept in the repo as the record of the exact mapping that was applied, and so
  * the same pass can be re-run over new code. It is idempotent: the semantic

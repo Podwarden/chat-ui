@@ -4,6 +4,28 @@ All notable changes to `@podwarden/chat-ui`. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are semver,
 and each release is cut as a `vX.Y.Z` git tag.
 
+## [0.1.16] - 2026-09-04
+
+### Changed
+
+- **The published root went from 21 entries to 15**, so the README sits higher on
+  the GitHub landing page instead of below a wall of config files.
+  `CONTRIBUTING.md`, `SECURITY.md` and `CODE_OF_CONDUCT.md` moved to `.github/`,
+  which GitHub reads community health files from, so every link still resolves;
+  `tsup.config.ts`, `vitest.config.ts` and `tailwind-preset.cjs` moved to
+  `config/`. **No public interface changed** — the preset is still imported as
+  `@podwarden/chat-ui/tailwind-preset`, and only the export map's internal target
+  moved. `package.json`, `package-lock.json`, `tsconfig.json` and
+  `eslint.config.mjs` stay at the root, where npm and editors need them.
+
+### Fixed
+
+- **Playwright's `test-results/` directory no longer ships.** It is in
+  `.gitignore`, but the publish staging copies the working directory without
+  consulting `.gitignore`, so a local screenshot run leaked it into the v0.1.14
+  and v0.1.15 snapshots. The published root is now pinned to an exact set by a
+  test.
+
 ## [0.1.15] - 2026-09-04
 
 ### Fixed

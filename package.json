@@ -11,19 +11,19 @@
   "type": "module",
   "//sideEffects": "src/theme/katex.ts is the SOURCE path and dist/theme/katex.js the built one; both are needed. esbuild resolves this list against source paths while bundling, so without the .ts entry it reports [ignored-bare-import] for markdown.tsx's import and the katex stylesheet survives only by accident (theme/katex is also a tsup entry, and entries are never dropped). The dist path is what a HOST bundler matches.",
   "sideEffects": ["**/*.css", "src/theme/katex.ts", "**/theme/katex.js"],
-  "files": ["dist", "tailwind-preset.cjs", "README.md", "LICENSE", "NOTICE"],
+  "files": ["dist", "config/tailwind-preset.cjs", "README.md", "LICENSE", "NOTICE"],
   "exports": {
     ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
     "./contract": { "types": "./dist/contract/index.d.ts", "import": "./dist/contract/index.js" },
     "./adapters-http": { "types": "./dist/adapters/http.d.ts", "import": "./dist/adapters/http.js" },
     "./conformance": { "types": "./dist/conformance/index.d.ts", "import": "./dist/conformance/index.js" },
     "./theme.css": "./dist/theme.css",
-    "./tailwind-preset": "./tailwind-preset.cjs",
+    "./tailwind-preset": "./config/tailwind-preset.cjs",
     "./openapi.chat.json": "./dist/contract/openapi.chat.json"
   },
   "scripts": {
-    "build": "tsup && cp src/theme/theme.css dist/theme.css && cp src/contract/openapi.chat.json dist/contract/openapi.chat.json && node scripts/postbuild.mjs",
-    "test": "vitest run",
+    "build": "tsup --config config/tsup.config.ts && cp src/theme/theme.css dist/theme.css && cp src/contract/openapi.chat.json dist/contract/openapi.chat.json && node scripts/postbuild.mjs",
+    "test": "vitest run --config config/vitest.config.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "screenshots": "playwright test",

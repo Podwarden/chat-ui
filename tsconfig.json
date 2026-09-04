@@ -5,5 +5,5 @@
     "resolveJsonModule": true, "isolatedModules": true, "noEmit": true, "types": ["vitest/globals", "@testing-library/jest-dom", "node"],
     "paths": { "@/*": ["./src/*"] }, "baseUrl": "."
   },
-  "include": ["src", "tests", "tailwind-preset.cjs", "tsup.config.ts", "vitest.config.ts"]
+  "include": ["src", "tests", "config/tailwind-preset.cjs", "config/tsup.config.ts", "config/vitest.config.ts"]
 }
