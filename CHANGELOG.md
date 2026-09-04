@@ -4,6 +4,18 @@ All notable changes to `@podwarden/chat-ui`. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are semver,
 and each release is cut as a `vX.Y.Z` git tag.
 
+## [0.1.14] - 2026-09-04
+
+### Changed
+
+- **The README now shows what this does** rather than describing it: screenshots
+  of tool calls, the multiple-choice selector, attachments, chat titling and
+  forking, and the settings panel — each in both themes — plus a features
+  infographic.
+- **The demo covers far more of the surface.** `examples/basic` seeds tool calls,
+  option prompts, attachments, a fork and real chat titles, so it doubles as a
+  reference implementation for integrating the component.
+
 ## [0.1.13] - 2026-09-04
 
 ### Fixed

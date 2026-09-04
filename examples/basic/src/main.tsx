@@ -4,7 +4,7 @@ import { ChatApp, type ChatTheme } from '@podwarden/chat-ui';
 import '@podwarden/chat-ui/theme.css';
 import './index.css';
 import { createDemoAdapters } from './demo-adapters';
-import { DEMO_CHAT_ID } from './fixtures';
+import { DEMO_CHAT_ID, SEED_IDS } from './fixtures';
 
 // Module-level, not built inside a component: `<ChatApp>` remounts its whole
 // thread whenever the `adapters` object's identity changes (see the package
@@ -19,12 +19,17 @@ const capabilities = { toolPolicy: 'hidden' } as const;
 // code.
 //   ?theme=light|dark  which look to render; anything else (including no
 //                      param at all) falls back to dark.
-//   ?seed=<anything>   open the seeded chat that has a fenced code block and
-//                      a LaTeX expression (DEMO_CHAT_ID) instead of
-//                      whichever chat would otherwise sort first.
+//   ?seed=<key>        open one of the seeded chats instead of whichever
+//                      chat would otherwise sort first. `key` is looked up
+//                      in `SEED_IDS` (fixtures.ts) — `demo` (the original
+//                      value, still the fenced-code-and-LaTeX chat),
+//                      `tools`, `options`, `attachments`, `fork`. Any other
+//                      (or empty-string) value falls back to `demo`, so
+//                      `?seed` alone keeps working exactly as before.
 const params = new URLSearchParams(window.location.search);
 const theme: ChatTheme = params.get('theme') === 'light' ? 'light' : 'dark';
-const initialChatId = params.get('seed') ? DEMO_CHAT_ID : null;
+const seed = params.get('seed');
+const initialChatId = seed ? (SEED_IDS[seed] ?? DEMO_CHAT_ID) : null;
 
 // Flips the light/dark token overrides in ./index.css. `theme` (the prop
 // below) separately drives Shiki's own light/dark syntax theme — see
