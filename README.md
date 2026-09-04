@@ -78,8 +78,8 @@ app with no attribution obligations.
 ## What you get
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/features-dark.svg">
-  <img alt="Feature grid: streaming with abort and re-attach, markdown and Shiki code highlighting, KaTeX math, tool calls, multiple-choice options, attachments, forking, auto-titling, context and budget meters, and semantic theming" src="docs/assets/features-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/features-dark.png">
+  <img alt="Feature grid: streaming with abort and re-attach, markdown and Shiki code highlighting, KaTeX math, tool calls, multiple-choice options, attachments, forking, auto-titling, context and budget meters, and semantic theming" src="docs/assets/features-light.png">
 </picture>
 
 - **Streaming** turns over SSE, with mid-stream abort and re-attach to a turn
