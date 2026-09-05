@@ -4,6 +4,17 @@ All notable changes to `@podwarden/chat-ui`. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are semver,
 and each release is cut as a `vX.Y.Z` git tag.
 
+## [0.1.17] - 2026-09-05
+
+### Fixed
+
+- **Corrected the 0.1.16 note about `test-results/`.** It claimed Playwright's
+  output directory had shipped in v0.1.14 and v0.1.15. It had not: the publish
+  runs from a fresh clone, so that artifact only ever existed on a developer
+  machine. Confirmed by auditing every blob in this repository's history. The
+  exclusion added in 0.1.16 stands — it closes a path that a publish from a
+  local working copy would open — but it is hardening, not a repair.
+
 ## [0.1.16] - 2026-09-04
 
 ### Changed
@@ -20,11 +31,12 @@ and each release is cut as a `vX.Y.Z` git tag.
 
 ### Fixed
 
-- **Playwright's `test-results/` directory no longer ships.** It is in
-  `.gitignore`, but the publish staging copies the working directory without
-  consulting `.gitignore`, so a local screenshot run leaked it into the v0.1.14
-  and v0.1.15 snapshots. The published root is now pinned to an exact set by a
-  test.
+- **The publish staging now excludes Playwright's `test-results/` directory.** It
+  is in `.gitignore`, but the staging copies the working directory without
+  consulting `.gitignore`, so a local screenshot run would have leaked it from a
+  developer machine. CI publishes from a fresh clone, so it never reached this
+  repository — the exclusion closes the path rather than repairing damage. The
+  published root is now pinned to an exact set by a test.
 
 ## [0.1.15] - 2026-09-04
 
