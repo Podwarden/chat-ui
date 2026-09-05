@@ -1,0 +1,86 @@
+# Publishes @podwarden/chat-ui to npmjs using TRUSTED PUBLISHING (OIDC).
+#
+# There is no npm token here and there must never be one. GitHub mints a
+# short-lived, workflow-specific OIDC token that npm exchanges for a publish
+# credential, which is why `id-token: write` below is load-bearing: without it
+# the publish fails with ENEEDAUTH.
+#
+# WHY THIS RUNS ON GITHUB AND NOT ON GITLAB
+# npm supports OIDC only from GitHub Actions (GitHub-hosted runners),
+# gitlab.com shared runners, and CircleCI cloud. Self-hosted runners are not
+# supported, and the private GitLab that owns this project is self-hosted, so
+# its `publish:npmjs` job cannot use OIDC and has to fall back to a long-lived
+# token. Around January 2027 npm removes direct publishing from 2FA-bypass
+# tokens entirely, so this workflow -- not that job -- is the durable path.
+#
+# npm SIDE OF THE CONFIGURATION (npmjs.com -> the package -> Settings ->
+# Trusted publishing). All fields are case-sensitive and npm does NOT validate
+# them when you save, so a typo surfaces only as ENEEDAUTH at publish time:
+#   Publisher:          GitHub Actions
+#   Organization/user:  Podwarden
+#   Repository:         chat-ui
+#   Workflow filename:  publish-npm.yml     <- this file's NAME, not its path
+#   Environment:        (leave empty)
+# Renaming this file breaks publishing until the npm side is updated to match.
+#
+# Provenance attestations are generated automatically -- no --provenance flag
+# needed -- because this publishes a public package from a public repository
+# via trusted publishing.
+
+name: Publish to npm
+
+on:
+  # The mirror receives exactly one squashed commit per release, so a push to
+  # main here IS a release. The guard below makes re-runs and non-release
+  # pushes no-ops rather than failures.
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # required for OIDC; publishing fails without it
+
+concurrency:
+  group: publish-npm
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest # must be GitHub-hosted: OIDC is unsupported on self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node >= 22.14 and npm >= 11.5.1 are the documented minimums for trusted
+      # publishing. Pinning 24 keeps headroom.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false # never cache in a release build
+
+      # Skip instead of failing when this version is already on npm. Publishing
+      # is a one-way door -- a version number can never be reused -- so the
+      # cheap check beats a red run on every re-push of an unchanged release.
+      - id: check
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if npm view "@podwarden/chat-ui@$VERSION" version >/dev/null 2>&1; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::@podwarden/chat-ui@$VERSION is already on npm; nothing to do."
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.check.outputs.published == 'false'
+        run: npm ci
+
+      - if: steps.check.outputs.published == 'false'
+        run: npm run build
+
+      # No NODE_AUTH_TOKEN: authentication comes from the OIDC exchange the npm
+      # CLI performs automatically. --access public is required because a scoped
+      # package defaults to restricted.
+      - if: steps.check.outputs.published == 'false'
+        run: npm publish --access public
