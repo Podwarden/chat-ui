@@ -4,6 +4,15 @@ All notable changes to `@podwarden/chat-ui`. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are semver,
 and each release is cut as a `vX.Y.Z` git tag.
 
+## [0.1.20] - 2026-09-05
+
+### Added
+
+- **A live demo at https://podwarden.github.io/chat-ui/** — the `examples/basic`
+  app, built from `main` and running entirely in the browser. No install, no
+  clone, no backend. The clone-and-build instructions remain for anyone who
+  wants to change it.
+
 ## [0.1.19] - 2026-09-05
 
 ### Added

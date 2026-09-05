@@ -52,6 +52,12 @@ Theming, below the fold) or the chat renders as unstyled HTML.
 
 ## Try it with no backend
 
+**[Open the live demo →](https://podwarden.github.io/chat-ui/)** — no install, no
+clone, no backend. It is `examples/basic` below, built from `main` and running
+entirely in your browser.
+
+To run the same thing locally, or to change it:
+
 ```bash
 git clone https://github.com/Podwarden/chat-ui.git && cd chat-ui
 npm install && npm run build   # examples/basic depends on the built dist/

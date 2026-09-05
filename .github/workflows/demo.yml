@@ -1,0 +1,63 @@
+# Builds examples/basic and publishes it to GitHub Pages, so the README can
+# offer a live demo alongside the clone-and-build instructions.
+#
+# The demo has no backend: it drives the real components through an in-memory
+# `Adapters` implementation, so a static host is all it needs.
+#
+# This runs on the PUBLIC MIRROR, not on GitLab. The mirror receives one
+# squashed commit per release, so a push to main here means "a release just
+# shipped" and the demo tracks the released code.
+
+name: Demo
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never cancel a half-finished deployment: `cancel-in-progress: true` here can
+# leave Pages serving a partially uploaded artifact.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22', cache: npm }
+
+      # The root package must be BUILT before the example installs: examples/
+      # basic depends on it through `file:../..`, whose exports map points at
+      # dist/. Without this the install fails with "Failed to resolve entry for
+      # package" -- the same ordering CONTRIBUTING.md documents for humans.
+      - run: npm ci
+      - run: npm run build
+
+      - run: npm ci
+        working-directory: examples/basic
+      # Pages serves this repo at https://podwarden.github.io/chat-ui/, so the
+      # asset URLs need that prefix. Passed on the CLI rather than set in
+      # vite.config.ts, which would break `npm run dev` for local contributors.
+      - run: npx vite build --base=/chat-ui/
+        working-directory: examples/basic
+
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: examples/basic/dist }
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
