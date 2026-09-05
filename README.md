@@ -31,6 +31,15 @@ accounting, and a renderer that doesn't break mid-token, already handled.
 npm install @podwarden/chat-ui
 ```
 
+Every release is published from CI with
+[provenance](https://docs.npmjs.com/generating-provenance-statements), so you can
+check that the code on npm was built from the commit it claims, by a workflow in
+this repository, before you trust it:
+
+```bash
+npm audit signatures
+```
+
 ## Mount it
 
 ```tsx
