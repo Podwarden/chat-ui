@@ -4,6 +4,21 @@ All notable changes to `@podwarden/chat-ui`. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are semver,
 and each release is cut as a `vX.Y.Z` git tag.
 
+## [0.1.18] - 2026-09-05
+
+### Fixed
+
+- **`package.json` in this repository now carries the released version.** It read
+  `0.0.0` in every release up to 0.1.17: the real number lives in the git tag and
+  was only ever written inside the publish container, never committed. The
+  published tree is now stamped with the release version.
+
+### Changed
+
+- **The npm tarball ships this README.** npm always packs `README.md` from the
+  package root and `files` cannot exclude it, so the tarball previously carried
+  an internal integration guide instead of the public documentation.
+
 ## [0.1.17] - 2026-09-05
 
 ### Fixed
