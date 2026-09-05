@@ -4,6 +4,14 @@ All notable changes to `@podwarden/chat-ui`. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are semver,
 and each release is cut as a `vX.Y.Z` git tag.
 
+## [0.1.22] - 2026-09-05
+
+### Changed
+
+- **Releases now carry provenance attestations.** `0.1.21` was the first, published
+  from GitHub Actions via trusted publishing — you can verify which commit and
+  workflow built it.
+
 ## [0.1.21] - 2026-09-05
 
 ### Changed
