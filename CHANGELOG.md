@@ -4,6 +4,21 @@ All notable changes to `@podwarden/chat-ui`. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are semver,
 and each release is cut as a `vX.Y.Z` git tag.
 
+## [0.1.24] - 2026-10-08
+
+### Changed
+
+- **The README leads with the live demo.** The first screen now shows what the
+  component looks like (light or dark, matching your system), links the
+  no-install demo, and gives the install and mount snippet before the longer
+  explanation. The provenance note moved to a "Verifying a release" section.
+- **LM Warden is named by its current name** in "Used in production".
+
+### Added
+
+- **Releases are tagged on GitHub.** Each release now carries a `vX.Y.Z` tag and
+  a GitHub Release whose notes are that version's changelog entry.
+
 ## [0.1.23] - 2026-09-05
 
 ### Added

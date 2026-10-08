@@ -1,15 +1,43 @@
 # @podwarden/chat-ui
 
-A persisted, streaming chat UI for React, and the backend contract it talks
-to — built around the parts that don't show up in a demo: a reload mid-answer,
-an abort that has to actually stop the model, and markdown that can't flinch
-at a token boundary.
+**A persisted, streaming chat UI for React, and the backend contract it talks to.**
 
-| Light | Dark |
-|---|---|
-| ![Light theme: a seeded conversation with a highlighted Python block and a KaTeX formula](docs/assets/chat-light.png) | ![Dark theme: the same conversation](docs/assets/chat-dark.png) |
+[![npm version](https://img.shields.io/npm/v/@podwarden/chat-ui?label=npm)](https://www.npmjs.com/package/@podwarden/chat-ui)
+[![CI](https://img.shields.io/github/actions/workflow/status/Podwarden/chat-ui/ci.yml?branch=main&label=CI)](https://github.com/Podwarden/chat-ui/actions/workflows/ci.yml)
+[![License: Apache-2.0](https://img.shields.io/github/license/Podwarden/chat-ui)](LICENSE)
 
-## Streaming looks like the easy part
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/chat-dark.png">
+  <img alt="A seeded conversation titled Markdown & math showcase: a Shiki-highlighted Python block, a KaTeX formula for the area of a circle, a sidebar of seven chats including a (fork) row and a (was: New chat) rename hint, and a header token gauge reading 160 + 1,024 reserved / 8,192" src="docs/assets/chat-light.png" width="900">
+</picture>
+
+**[Open the live demo](https://podwarden.github.io/chat-ui/)**: no install, no
+clone, no backend. It is `examples/basic` from this repository, built from
+`main` and running entirely in your browser.
+
+```bash
+npm install @podwarden/chat-ui
+```
+
+```tsx
+'use client';
+import { ChatApp } from '@podwarden/chat-ui';
+import { createHttpAdapters } from '@podwarden/chat-ui/adapters-http';
+import { useMemo } from 'react';
+
+export function Chat({ baseUrl }: { baseUrl: string }) {
+  // Keep the adapters object stable: a new one on every render remounts the thread.
+  const adapters = useMemo(() => createHttpAdapters({ baseUrl, fetch }), [baseUrl]);
+  return <ChatApp adapters={adapters} theme="dark" />;
+}
+```
+
+React 19 (`react`, `react-dom`) is a peer dependency. Import
+`@podwarden/chat-ui/theme.css` (or supply the 17 tokens yourself, see
+[Theming](#theming-in-full) below the fold) or the chat renders as unstyled
+HTML.
+
+## Streaming is the part that works in the demo
 
 Getting tokens to appear one at a time is a `for await` loop and an hour of
 work. The part that costs real time shows up right after: the user reloads
@@ -22,50 +50,13 @@ for one frame. Nobody notices the token-accounting bug until the invoice
 doesn't match what the UI showed all month.
 
 If any of that sounds like a bug you've filed against your own chat feature,
-this package is the part after the demo — re-attach, abort semantics, token
+this package is the part after the demo: re-attach, abort semantics, token
 accounting, and a renderer that doesn't break mid-token, already handled.
-
-## Install
-
-```bash
-npm install @podwarden/chat-ui
-```
-
-Every release is published from CI with
-[provenance](https://docs.npmjs.com/generating-provenance-statements), so you can
-check that the code on npm was built from the commit it claims, by a workflow in
-this repository, before you trust it:
-
-```bash
-npm audit signatures
-```
-
-## Mount it
-
-```tsx
-'use client';
-import { ChatApp } from '@podwarden/chat-ui';
-import { createHttpAdapters } from '@podwarden/chat-ui/adapters-http';
-import { useMemo } from 'react';
-
-export function Chat({ baseUrl }: { baseUrl: string }) {
-  // Keep the adapters object stable — a new one on every render remounts the thread.
-  const adapters = useMemo(() => createHttpAdapters({ baseUrl, fetch }), [baseUrl]);
-  return <ChatApp adapters={adapters} theme="dark" />;
-}
-```
-
-React 19 (`react`, `react-dom`) is a peer dependency. Import
-`@podwarden/chat-ui/theme.css` (or supply the 17 tokens yourself — see
-Theming, below the fold) or the chat renders as unstyled HTML.
 
 ## Try it with no backend
 
-**[Open the live demo →](https://podwarden.github.io/chat-ui/)** — no install, no
-clone, no backend. It is `examples/basic` below, built from `main` and running
-entirely in your browser.
-
-To run the same thing locally, or to change it:
+The [live demo](https://podwarden.github.io/chat-ui/) is `examples/basic`. To
+run the same thing locally, or to change it:
 
 ```bash
 git clone https://github.com/Podwarden/chat-ui.git && cd chat-ui
@@ -73,85 +64,86 @@ npm install && npm run build   # examples/basic depends on the built dist/
 cd examples/basic && npm install && npm run dev
 ```
 
-`examples/basic` wires the full UI to an in-memory `Adapters` implementation —
-no server, no port, no SSE parsing — and it isn't a toy conversation. It seeds
+`examples/basic` wires the full UI to an in-memory `Adapters` implementation
+(no server, no port, no SSE parsing) and it isn't a toy conversation. It seeds
 a sidebar of real chats: a tool call and its result, the `present_options`
 multiple-choice selector, a message with an image attachment, a chat forked
 mid-conversation, and a markdown-and-math showcase, each with a title an
 actual user would give it.
 
 This is the fastest way to see the library working end to end, and it is also
-the **reference implementation** for wiring it into a product: `Transport.
-sendTurn(req, onEvent, signal)` delivers every event this demo emits by plain
-callback (see `examples/basic/src/demo-adapters.ts`), so the same file that
-makes the demo self-contained is a working example of every method your own
-`Adapters` object has to implement. Integration is meant to be this direct —
-if your backend can produce the documented event sequence, this is what
-wiring it up looks like. The whole directory is CC0 — copy it into your own
-app with no attribution obligations.
+the **reference implementation** for wiring it into a product:
+`Transport.sendTurn(req, onEvent, signal)` delivers every event this demo
+emits by plain callback (see
+[`examples/basic/src/demo-adapters.ts`](examples/basic/src/demo-adapters.ts)),
+so the same file that makes the demo self-contained is a working example of
+every method your own `Adapters` object has to implement. Integration is meant
+to be this direct: if your backend can produce the documented event sequence,
+this is what wiring it up looks like. The whole directory is CC0, so copy it
+into your own app with no attribution obligations.
 
 ## What you get
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/features-dark.png">
-  <img alt="Feature grid: streaming with abort and re-attach, markdown and Shiki code highlighting, KaTeX math, tool calls, multiple-choice options, attachments, forking, auto-titling, context and budget meters, and semantic theming" src="docs/assets/features-light.png">
+  <img alt="Feature grid: streaming with abort and re-attach, markdown and Shiki code highlighting, KaTeX math, tool calls, multiple-choice options, attachments, forking, auto-titling, context and budget meters, and semantic theming" src="docs/assets/features-light.png" width="900">
 </picture>
 
 - **Streaming** turns over SSE, with mid-stream abort and re-attach to a turn
-  still running server-side after a reload — the two failure modes a demo
+  still running server-side after a reload: the two failure modes a demo
   never has to handle.
 - **Markdown**, Shiki-highlighted code blocks, and KaTeX math, rendered safely
   (sanitized HTML, no raw script execution) and incrementally, so a fenced
   block or a formula doesn't wait for the whole message to finish streaming
-  before it lights up — the screenshot at the top of this page is that code
+  before it lights up. The screenshot at the top of this page is that code
   block and that formula, rendered live.
 
-- **Tool calls**, rendered as a collapsible call/result block — durations,
-  arguments, and the result, whatever shape it comes back in:
+- **Tool calls**, rendered as a collapsible call/result block: durations,
+  arguments, and the result, whatever shape it comes back in.
 
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/tool-call-dark.png">
-    <img alt="An expanded tool-call block showing a get_weather call, its JSON arguments and result, and the 812 ms duration" src="docs/assets/tool-call-light.png">
+    <img alt="An expanded tool-call block showing a get_weather call, its JSON arguments and result, and the 812 ms duration" src="docs/assets/tool-call-light.png" width="900">
   </picture>
 
-- **The `present_options` selector** — a model can offer the user a small set
+- **The `present_options` selector**: a model can offer the user a small set
   of choices as buttons instead of asking them to type an answer to a
-  multiple-choice question:
+  multiple-choice question.
 
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/options-dark.png">
-    <img alt="An unanswered present_options prompt asking which environment to deploy to, with Staging, Production and Local sandbox as buttons" src="docs/assets/options-light.png">
+    <img alt="An unanswered present_options prompt asking which environment to deploy to, with Staging, Production and Local sandbox as buttons" src="docs/assets/options-light.png" width="900">
   </picture>
 
-- **Attachments** — drag-drop, the file picker, or paste straight from the
-  clipboard; images in, thumbnails and a zoom-and-pan lightbox out:
+- **Attachments**: drag-drop, the file picker, or paste straight from the
+  clipboard; images in, thumbnails and a zoom-and-pan lightbox out.
 
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/attachments-dark.png">
-    <img alt="A user message with an inline image attachment, followed by an assistant reply commenting on it" src="docs/assets/attachments-light.png">
+    <img alt="A user message with an inline image attachment, followed by an assistant reply commenting on it" src="docs/assets/attachments-light.png" width="900">
   </picture>
 
-- **Fork and edit** — branch a chat from any past message, or edit and
+- **Fork and edit**: branch a chat from any past message, or edit and
   regenerate a turn, without losing the original.
-- **Automatic chat titling** — chats title themselves, and the sidebar shows
+- **Automatic chat titling**: chats title themselves, and the sidebar shows
   what a chat used to be called next to what it's called now, so a rename
   never makes a chat unrecognisable. Forking shows up in the same list, as an
-  ordinary row with its own title:
+  ordinary row with its own title.
 
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/sidebar-dark.png">
-    <img alt="The sidebar with seven real chat titles, one showing a (was: New chat) auto-title hint and one a (fork) row" src="docs/assets/sidebar-light.png">
+    <img alt="The sidebar with seven real chat titles, one showing a (was: New chat) auto-title hint and one a (fork) row" src="docs/assets/sidebar-light.png" width="900">
   </picture>
 
-- **Context and budget meters** — a token gauge in the header and a
+- **Context and budget meters**: a token gauge in the header and a
   cost-against-budget bar, both fed by the same events the transcript is.
-- **Per-chat settings** — model, temperature, top‑p, max tokens, system
+- **Per-chat settings**: model, temperature, top-p, max tokens, system
   prompt and enabled tools, editable per chat and snapshotted on every
-  message:
+  message.
 
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/settings-dark.png">
-    <img alt="The settings panel: model select, temperature, max tokens, top p, system prompt, and a tools checklist" src="docs/assets/settings-light.png">
+    <img alt="The settings panel: model select, temperature, max tokens, top p, system prompt, and a tools checklist" src="docs/assets/settings-light.png" width="900">
   </picture>
 
 - **Theming** through 17 semantic `--chat-*` tokens and a Tailwind preset, so
@@ -159,34 +151,35 @@ app with no attribution obligations.
 
 ## Used in production
 
-This component is the chat surface in **PodWarden Hub** and **LLM Warden**.
+This component is the chat surface in **PodWarden Hub** and
+**[LM Warden](https://github.com/Podwarden/lm-warden)**.
 
 It also powers the chat interface in [Synapse](https://www.catalation.com/)
-by Catalation — a "Business as a Service" platform where the entire
+by Catalation, a "Business as a Service" platform where the entire
 interaction model is a conversation with a virtual CEO agent that
 orchestrates the rest of the system and escalates only the decisions the
 founder needs to make. For Synapse, chat isn't a panel bolted onto a
-dashboard; it's the product's only interface — a different bar to clear than
+dashboard; it's the product's only interface, a different bar to clear than
 a support widget in the corner of a screen.
 
 ## Where this fits
 
-- **Embedding an assistant in an existing product** — a chat panel next to
+- **Embedding an assistant in an existing product**: a chat panel next to
   whatever your app already does, without inheriting a chat framework's
   opinions about your layout.
-- **A self-hosted LLM front-end** — point `createHttpAdapters` at your own
+- **A self-hosted LLM front-end**: point `createHttpAdapters` at your own
   inference server and get a full chat UI without writing one.
-- **Giving an internal tool a chat surface** — the fastest way to put a
+- **Giving an internal tool a chat surface**: the fastest way to put a
   conversational interface in front of a system your team already runs.
-- **Building on the contract with your own backend** — implement
+- **Building on the contract with your own backend**: implement
   `openapi.chat.json`'s routes and the documented SSE events, and `<ChatApp>`
   drives them; you own the model, the tools, and the storage.
 
 ## The backend contract
 
 `openapi.chat.json` describes the wire protocol this package speaks. Any
-backend that implements it — not just the ones this package ships adapters
-for — can drive `<ChatApp>`. Prove it with the shipped conformance suite
+backend that implements it, not just the ones this package ships adapters
+for, can drive `<ChatApp>`. Prove it with the shipped conformance suite
 against a live server, one file:
 
 ```ts
@@ -202,7 +195,7 @@ than running anything itself, talks to the server only through the injected
 **How does your backend behave when a client reattaches mid-turn?** If the
 answer is "I haven't tested that", the conformance suite's `live-replay` group
 opens a turn, reconnects to it through `GET .../turn/live`, and asserts the
-replayed frames are byte-identical to the original — before your users find
+replayed frames are byte-identical to the original, before your users find
 out the hard way.
 
 ## Entry points
@@ -211,14 +204,15 @@ out the hard way.
 |---|---|
 | `@podwarden/chat-ui` | The chat UI React components. Carries `'use client'`. |
 | `@podwarden/chat-ui/contract` | Request/response types, the SSE event union, `ApiError`, `CONTRACT_VERSION`. React-free. |
-| `@podwarden/chat-ui/adapters-http` | `createHttpAdapters({ baseUrl, fetch })` — the contract over HTTP. React-free. |
-| `@podwarden/chat-ui/conformance` | `runConformance(...)` — a runnable suite proving a backend speaks the contract. |
+| `@podwarden/chat-ui/adapters-http` | `createHttpAdapters({ baseUrl, fetch })`: the contract over HTTP. React-free. |
+| `@podwarden/chat-ui/conformance` | `runConformance(...)`: a runnable suite proving a backend speaks the contract. |
 | `@podwarden/chat-ui/openapi.chat.json` | The wire protocol as OpenAPI. |
 
 ## Licence
 
 Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE). Everything under
-`examples/` is CC0 — copy it freely.
+`examples/` is CC0 ([`examples/LICENSE`](examples/LICENSE)), so copy it
+freely.
 
 "PodWarden" is a trademark of its owner. The licence does not grant permission
 to use the trade names, trademarks, or product names of the licensor, except
@@ -229,14 +223,25 @@ work.
 
 ## Reference
 
-The sections above are the pitch. What follows is deeper integration detail —
+The sections above are the pitch. What follows is deeper integration detail,
 for a host that already knows it wants this package and needs the specifics.
+
+### Verifying a release
+
+Every release is published from CI with
+[provenance](https://docs.npmjs.com/generating-provenance-statements), so you
+can check that the code on npm was built from the commit it claims, by a
+workflow in this repository, before you trust it:
+
+```bash
+npm audit signatures
+```
 
 ### About this repository
 
 This repository is the public source mirror of the library, published under
 Apache-2.0. It carries the source and the build of every module the package
-ships — `npm ci && npm run build` here produces the same `dist/` that is
+ships: `npm ci && npm run build` here produces the same `dist/` that is
 released. The internal test suite, the GitLab CI machinery, the `publish/`
 tooling that produces this mirror, `.npmrc.example`, `screenshots/` and
 `playwright.config.ts` (the screenshot-generation harness), and
@@ -275,7 +280,7 @@ content: ['./src/**/*.{ts,tsx}', './node_modules/@podwarden/chat-ui/dist/**/*.js
 
 @theme {
   --color-chat-page: rgb(var(--chat-page));
-  /* …one line per token… */
+  /* ...one line per token... */
 }
 ```
 
