@@ -13,7 +13,7 @@
 // re-exported here as a convenience and is also importable on its own from
 // `@podwarden/chat-ui/contract`.
 export { ChatApp } from './app/chat-app';
-export type { ChatAppProps } from './app/chat-app';
+export type { ChatAppProps, SelectionActionsOptions } from './app/chat-app';
 export type { Labels } from './app/labels';
 
 export { AdaptersProvider, useAdapters, useOptionalAdapters } from './adapters/context';
@@ -32,6 +32,23 @@ export { Lightbox } from './components/lightbox';
 export { ContextBar } from './components/context-bar';
 export { BudgetMeter } from './components/budget-meter';
 export { Banners } from './components/banners';
+
+// Text-selection actions: the menu/dock provider, the dock slot, the chips,
+// the context hook and the pure prompt/quote helpers.
+export { SelectionActions, SelectionDock } from './components/selection/selection-actions';
+export type { SelectionActionsProps, SelectionActionsHandle } from './components/selection/selection-actions';
+export { QuoteChips } from './components/selection/quote-chips';
+export type { QuoteChipsProps } from './components/selection/quote-chips';
+export { useSelectionActions, DEFAULT_SELECTION_LABELS, SELECTION_SHORTCUT } from './components/selection/context';
+export type { SelectionLabels, SelectionActionsContextValue } from './components/selection/context';
+export {
+  MAX_QUOTES, PROMPTS, DEFAULT_QUICK_ACTIONS, TRANSLATE_LANGUAGES,
+  toBlockquote, toFence, quoteToMarkdown, serializeQuotes, appendQuoteToDraft,
+  buildExplainPrompt, buildAskPrompt, buildTranslatePrompt, buildInstructionPrompt,
+} from './model/selection';
+export type { Quote, QuoteSource, QuickAction } from './model/selection';
+export { DEFAULT_SELECTION_PREFS, readSelectionPrefs, writeSelectionPrefs } from './model/prefs';
+export type { SelectionPrefs } from './model/prefs';
 
 export { useChatThread } from './hooks/use-chat-thread';
 export { useChats } from './hooks/use-chats';

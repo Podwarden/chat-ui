@@ -7,6 +7,8 @@ import { ALLOWED_IMAGE_MIMES } from '../model/limits';
 import type { Capabilities } from '../adapters/capabilities';
 import type { Draft } from '../hooks/use-attachments';
 import { AttachmentTray } from './attachment-tray';
+import { QuoteChips } from './selection/quote-chips';
+import type { Quote } from '../model/selection';
 
 export interface ComposerProps {
   value: string;
@@ -44,6 +46,21 @@ export interface ComposerProps {
    * already in another editable field, which is never stolen from.
    */
   focusKey?: string | null;
+  /**
+   * Quotes staged above the textarea as removable chips (selection actions).
+   * They count as content: a message of chips alone may be sent. The host
+   * serialises them on send (`serializeQuotes`).
+   */
+  quotes?: readonly Quote[];
+  onRemoveQuote?: (id: string) => void;
+  /** A chip's preview was clicked; defaults to "go to source" inside `<SelectionActions>`. */
+  onQuoteClick?: (q: Quote) => void;
+  /**
+   * Bump to focus the textarea with the caret at the end — after a quote or a
+   * prefill landed in it. Unlike `focusKey` this takes focus even from
+   * another field: the user just asked for it.
+   */
+  focusSignal?: number;
 }
 
 const MAX_ROWS_PX = 8 * 24;
@@ -83,6 +100,15 @@ export function Composer(p: ComposerProps) {
     ta.focus();
   }, [p.focusKey, taDisabled]);
 
+  useEffect(() => {
+    const ta = taRef.current;
+    if (!p.focusSignal || !ta || ta.disabled) return;
+    ta.focus();
+    const end = ta.value.length;
+    ta.setSelectionRange(end, end);
+    ta.scrollTop = ta.scrollHeight;
+  }, [p.focusSignal]);
+
   // "Type anywhere" (user feedback): a click or scroll in the thread drops
   // focus onto the scroller or <body>, after which keystrokes went nowhere.
   // A printable key or Backspace pressed on a non-editable target belongs to
@@ -109,8 +135,9 @@ export function Composer(p: ComposerProps) {
   const missing = p.drafts.some((d) => d.status === 'missing');
   const failed = p.drafts.some((d) => d.status === 'error');
   const hasReadyImage = p.drafts.some((d) => d.status === 'ready');
+  const hasQuotes = (p.quotes?.length ?? 0) > 0;
   const canSend =
-    !p.disabled && !p.isStreaming && !busy && !missing && !failed && (p.value.trim().length > 0 || hasReadyImage);
+    !p.disabled && !p.isStreaming && !busy && !missing && !failed && (p.value.trim().length > 0 || hasReadyImage || hasQuotes);
 
   // one reason line, most specific first: the page's own block outranks a
   // draft problem the user can fix by removing a chip
@@ -147,6 +174,7 @@ export function Composer(p: ComposerProps) {
 
   return (
     <div className="rounded-[0.25rem] border border-chat-rule bg-chat-surface/50">
+      {p.quotes && p.onRemoveQuote && <QuoteChips quotes={p.quotes} onRemove={p.onRemoveQuote} onReveal={p.onQuoteClick} />}
       <AttachmentTray drafts={p.drafts} onRemove={p.onRemoveDraft} />
       {reason && (
         <div data-testid="composer-reason" role="status" className="px-3 pt-2 text-xs text-chat-warn">

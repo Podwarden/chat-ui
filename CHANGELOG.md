@@ -4,6 +4,34 @@ All notable changes to `@podwarden/chat-ui`. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are semver,
 and each release is cut as a `vX.Y.Z` git tag.
 
+## [0.1.25] - 2026-10-23
+
+### Added
+
+- **Selection actions.** Selecting text in a reply shows a small menu after a
+  short delay (300 ms by default): Copy, Quote, Explain, Ask…, and More▸
+  (Simplify, Make shorter, Translate, Give an example, Branch from here).
+  Quotes collect as chips above the composer (up to 10) and link back to their
+  source message. Every reply also gets a Quote button and every code block an
+  Ask button. Alt+Enter (Option+Return) opens the menu from the keyboard; on
+  touch screens the actions sit in a bar above the composer. Works while a
+  reply is still streaming.
+- **Text selection settings.** A "Text selection" section in Settings: "Show
+  menu when selecting text" (on by default), the menu delay, whether Explain
+  sends straight away or fills the message box, and "Collect quotes as chips".
+  Saved per browser.
+- **`selectionActions` prop** on `ChatApp` for host defaults, custom quick
+  actions, translate languages, labels and an `onBranchFrom` handler; pass
+  `false` to remove the feature. `SelectionActions`, `SelectionDock` and the new
+  optional `Composer` props are exported for hosts that build their own layout.
+
+### Fixed
+
+- **Code blocks while streaming.** A code block in a reply that is still
+  streaming can now be expanded and collapsed, and it no longer flickers in
+  height as lines arrive. The thread footer no longer remounts the streaming
+  message on every token.
+
 ## [0.1.24] - 2026-10-08
 
 ### Changed

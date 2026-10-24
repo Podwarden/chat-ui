@@ -20,7 +20,9 @@ import {
   rehypeSafeMathSource,
   rehypeStashImgSrc,
 } from '../model/sanitize-schema';
-import { CodeBlock } from './code-block';
+import type { Element, Root } from 'hast';
+import { visit } from 'unist-util-visit';
+import { CodeBlock, CodeBlockScope } from './code-block';
 
 /**
  * The single place react-markdown is imported.
@@ -42,7 +44,30 @@ const rehypePlugins = (attachmentPathPrefix: string): PluggableList => [
   [rehypeKatex, { trust: false, throwOnError: false }],
   rehypeSafeMathSource,
   [rehypeChat2Policy, { attachmentPathPrefix }],
+  rehypeNumberCodeBlocks,
 ];
+
+/**
+ * Give every fence (`pre > code`) its ordinal in the document, on the hast
+ * node's `data` (never a property, so nothing reaches the DOM or the
+ * sanitizer). That ordinal is the block's identity for its fold state: a
+ * streamed message only ever appends, so block N stays block N on every token
+ * and after the turn completes (see `CodeBlockScope` in code-block.tsx).
+ */
+function rehypeNumberCodeBlocks() {
+  return (tree: Root) => {
+    let n = 0;
+    visit(tree, 'element', (node: Element, _i, parent) => {
+      if (node.tagName === 'code' && parent && parent.type === 'element' && parent.tagName === 'pre') {
+        node.data = { ...node.data, chatCodeIndex: n++ } as Element['data'];
+      }
+    });
+  };
+}
+function codeIndexOf(node: Element | undefined): number | undefined {
+  const v = (node?.data as { chatCodeIndex?: unknown } | undefined)?.chatCodeIndex;
+  return typeof v === 'number' ? v : undefined;
+}
 
 /**
  * `remarkGfm` is what makes a bare `https://…` in model output clickable (GFM
@@ -75,7 +100,7 @@ const COMPONENTS: Components = {
   // Fences are rendered by <CodeBlock>; unwrap the <pre> so the block isn't
   // double-wrapped.
   pre: ({ children }) => <>{children}</>,
-  code: ({ className, children }) => {
+  code: ({ className, children, node }) => {
     const match = /language-([\w#+.-]+)/.exec(className ?? '');
     if (!match) {
       // GFM leaves a URL inside inline code as text; we link it anyway — the
@@ -87,16 +112,30 @@ const COMPONENTS: Components = {
         </code>
       );
     }
-    return <CodeBlock code={childrenToText(children).replace(/\n$/, '')} lang={match[1]} />;
+    return <CodeBlock code={childrenToText(children).replace(/\n$/, '')} lang={match[1]} blockIndex={codeIndexOf(node)} />;
   },
 };
 
 /**
- * Memoised on `{text, streaming}` — react-markdown re-parses the whole document on
+ * Memoised on `{text, streaming, blockScope}` — react-markdown re-parses the whole document on
  * every render, so without this every SSE frame would re-parse every sibling
  * message (renderer-decision doc, finding 1).
+ *
+ * `blockScope` (optional): a stable id for this text — <MessageItem> passes
+ * `<message id>:<part index>` — under which each code block remembers the
+ * user's "Show all"/"Collapse" choice across remounts (streaming tail →
+ * committed row). Without it the choice lives only as long as the block is
+ * mounted.
  */
-export const Markdown = memo(function Markdown({ text, streaming }: { text: string; streaming: boolean }) {
+export const Markdown = memo(function Markdown({
+  text,
+  streaming,
+  blockScope,
+}: {
+  text: string;
+  streaming: boolean;
+  blockScope?: string;
+}) {
   // The image-src allowlist is the host's own attachment route, not a constant:
   // `adapters.id` is the chat backend's base URL (`/api/chat2` for vLLM Warden,
   // `/api/v1/warden/{instance}/chat2` for the Hub), and `storage.attachmentUrl`
@@ -119,9 +158,11 @@ export const Markdown = memo(function Markdown({ text, streaming }: { text: stri
       data-streaming={streaming ? 'true' : undefined}
       className="chat2-md max-w-none text-[14px] leading-relaxed text-chat-fg [&_a]:text-chat-accent-strong [&_a:hover]:text-chat-accent [&_blockquote]:border-l-2 [&_blockquote]:border-chat-rule [&_blockquote]:pl-3 [&_h1]:text-lg [&_h2]:text-base [&_h3]:text-sm [&_li]:my-0.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-2 [&_pre]:my-2 [&_pre]:overflow-x-auto [&_table]:my-2 [&_table]:border-collapse [&_td]:border [&_td]:border-chat-rule [&_td]:px-2 [&_th]:border [&_th]:border-chat-rule [&_th]:px-2 [&_ul]:list-disc [&_ul]:pl-5"
     >
-      <ReactMarkdown remarkPlugins={REMARK_PLUGINS} rehypePlugins={plugins} components={COMPONENTS}>
-        {normalized}
-      </ReactMarkdown>
+      <CodeBlockScope.Provider value={blockScope}>
+        <ReactMarkdown remarkPlugins={REMARK_PLUGINS} rehypePlugins={plugins} components={COMPONENTS}>
+          {normalized}
+        </ReactMarkdown>
+      </CodeBlockScope.Provider>
     </div>
   );
 });

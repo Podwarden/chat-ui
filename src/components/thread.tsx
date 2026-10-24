@@ -1,14 +1,60 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type PointerEvent, type TouchEvent, type WheelEvent } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type PointerEvent, type TouchEvent, type WheelEvent } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { ArrowDown } from 'lucide-react';
 import type { AttachmentOut } from '../adapters/types';
 import type { ThreadState } from '../model/message';
 import { MessageItem, type MessageItemProps } from './message-item';
 import { DEFAULT_LABELS, type Labels } from '../app/labels';
+import { useSelectionActions } from './selection/context';
 
 type Handlers = Pick<MessageItemProps, 'onRegenerate' | 'onForkHere' | 'onEdit' | 'onPick' | 'onRetry' | 'onOpenImage'>;
+
+/**
+ * What the footer (streaming tail) and the empty placeholder need from the
+ * <Thread> render. Handed down through React context — NOT closed over by an
+ * inline component — because Virtuoso's `components.*` are component TYPES:
+ * an inline `Footer: () => …` is a new type on every <Thread> render, i.e. on
+ * every streamed token, so React unmounted and remounted the whole tail per
+ * token. That reset every piece of local state in it (a code block's
+ * "Show all", its fold measurement — the owner-reported flicker) and swapped
+ * the DOM out from under the user's clicks.
+ */
+interface ThreadSlotCtx {
+  tail: MessageItemProps['message'] | null;
+  bottomRef: React.RefObject<HTMLDivElement | null>;
+  tailProps: Omit<MessageItemProps, 'message' | 'isLast' | 'isStreaming' | 'turnInFlight'>;
+  startConversation: string;
+}
+const SlotCtx = createContext<ThreadSlotCtx | null>(null);
+
+function ThreadFooter() {
+  const c = useContext(SlotCtx)!;
+  return (
+    <div ref={c.bottomRef}>
+      {c.tail && (
+        <div data-testid="stream-tail">
+          <MessageItem message={c.tail} isLast isStreaming turnInFlight {...c.tailProps} />
+        </div>
+      )}
+      <div className="h-4" />
+    </div>
+  );
+}
+
+function ThreadEmpty() {
+  const c = useContext(SlotCtx)!;
+  // Virtuoso renders the placeholder whenever `data` is empty, footer or not —
+  // suppress it for the very first turn, whose tail is already streaming into
+  // the footer.
+  return c.tail ? null : (
+    <div className="flex h-full items-center justify-center p-8 text-sm text-chat-dim">{c.startConversation}</div>
+  );
+}
+
+/** Module-level so the component types never change between renders. */
+const VIRTUOSO_COMPONENTS = { Footer: ThreadFooter, EmptyPlaceholder: ThreadEmpty };
 
 export interface ThreadProps extends Handlers {
   state: ThreadState;
@@ -157,6 +203,24 @@ export function Thread(p: ThreadProps) {
     setShowJump(false);
   }, []);
 
+  // Inside <SelectionActions>: let a quote's "go to source" bring a row that
+  // Virtuoso has not mounted into view. Leaving follow mode is the point — a
+  // reader sent up the transcript must not be yanked back by the next token.
+  const selection = useSelectionActions();
+  const msgsRef = useRef(msgs);
+  msgsRef.current = msgs;
+  useEffect(() => {
+    if (!selection) return;
+    selection.registerScroller((id) => {
+      const index = msgsRef.current.findIndex((m) => m.id === id);
+      if (index < 0) return false;
+      setFollow(false);
+      ref.current?.scrollToIndex({ index, align: 'center' });
+      return true;
+    });
+    return () => selection.registerScroller(null);
+  }, [selection]);
+
   // `MessageItem` is `memo`'d so that a delta on the tail costs one row
   // render, not N. That only holds if every callback a row receives is
   // referentially stable — callers hand us fresh arrows on most renders, so
@@ -192,7 +256,26 @@ export function Thread(p: ThreadProps) {
     bottomRef.current?.scrollIntoView?.({ block: 'end' });
   }, [tail, follow]);
 
+  const slot = useMemo<ThreadSlotCtx>(
+    () => ({
+      tail,
+      bottomRef,
+      tailProps: {
+        attachments: p.attachments,
+        maxTokens: p.maxTokens,
+        onForkHere,
+        onPick,
+        onOpenImage,
+        reasoningOpen: p.reasoningOpen,
+        onReasoningToggle,
+      },
+      startConversation: labels.startConversation,
+    }),
+    [tail, p.attachments, p.maxTokens, onForkHere, onPick, onOpenImage, p.reasoningOpen, onReasoningToggle, labels.startConversation],
+  );
+
   return (
+    <SlotCtx.Provider value={slot}>
     <div
       className="relative h-full"
       data-testid="thread-drop-zone"
@@ -234,39 +317,7 @@ export function Thread(p: ThreadProps) {
             onReasoningToggle={onReasoningToggle}
           />
         )}
-        components={{
-          Footer: () => (
-            <div ref={bottomRef}>
-              {tail && (
-                <div data-testid="stream-tail">
-                  <MessageItem
-                    message={tail}
-                    attachments={p.attachments}
-                    isLast
-                    isStreaming
-                    turnInFlight
-                    maxTokens={p.maxTokens}
-                    onForkHere={onForkHere}
-                    onPick={onPick}
-                    onOpenImage={onOpenImage}
-                    reasoningOpen={p.reasoningOpen}
-                    onReasoningToggle={onReasoningToggle}
-                  />
-                </div>
-              )}
-              <div className="h-4" />
-            </div>
-          ),
-          // Virtuoso renders the placeholder whenever `data` is empty, footer
-          // or not — suppress it for the very first turn, whose tail is
-          // already streaming into the footer.
-          EmptyPlaceholder: () =>
-            tail ? null : (
-              <div className="flex h-full items-center justify-center p-8 text-sm text-chat-dim">
-                {labels.startConversation}
-              </div>
-            ),
-        }}
+        components={VIRTUOSO_COMPONENTS}
       />
       {/* streaming text itself is never announced — only terminal states and errors */}
       <div role="status" aria-live="polite" className="sr-only">
@@ -284,5 +335,6 @@ export function Thread(p: ThreadProps) {
         </button>
       )}
     </div>
+    </SlotCtx.Provider>
   );
 }

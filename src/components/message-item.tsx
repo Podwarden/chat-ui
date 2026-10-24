@@ -1,7 +1,7 @@
 'use client';
 
 import { memo, useMemo, useState } from 'react';
-import { Copy, GitFork, Pencil, RotateCcw } from 'lucide-react';
+import { Copy, CornerLeftUp, GitFork, Pencil, Quote as QuoteIcon, RotateCcw } from 'lucide-react';
 import { copyToClipboard } from '@/ui/clipboard';
 import type { AttachmentOut } from '../adapters/types';
 import type { Message, Part } from '../model/message';
@@ -13,6 +13,8 @@ import { OptionsButtons } from './options-buttons';
 import { AttachmentImage } from './attachment-image';
 import { ErrorPart } from './error-part';
 import { TokenBar } from './token-bar';
+import { useSelectionActions, type SelectionActionsContextValue } from './selection/context';
+import { splitQuotedText } from '../model/selection';
 
 export interface MessageItemProps {
   message: Message;
@@ -65,8 +67,36 @@ function IconBtn({
   );
 }
 
+/**
+ * A user message's text. Inside <SelectionActions>, the blockquotes it carries
+ * (sent quotes) are drawn as quote blocks that jump back to their source.
+ */
+function UserText({ text, sel }: { text: string; sel: SelectionActionsContextValue | null }) {
+  const runs = sel && /^>/m.test(text) ? splitQuotedText(text) : null;
+  if (!runs) return <div className="whitespace-pre-wrap text-[14px] text-chat-fg">{text}</div>;
+  return (
+    <div className="space-y-1 text-[14px] text-chat-fg">
+      {runs.map((r, i) =>
+        r.kind === 'quote' ? (
+          <blockquote key={i} className="group/q relative whitespace-pre-wrap border-l-2 border-chat-accent-strong/60 pl-3 pr-7 text-chat-muted">
+            {r.text}
+            <button type="button" data-selection-ignore="" aria-label={sel!.labels.goToSource} title={sel!.labels.goToSource}
+              onClick={() => sel!.revealQuote({ text: r.text })}
+              className="absolute right-0 top-0 select-none rounded-[0.25rem] p-1 text-chat-dim hover:text-chat-accent">
+              <CornerLeftUp className="h-3.5 w-3.5" aria-hidden />
+            </button>
+          </blockquote>
+        ) : (
+          <div key={i} className="whitespace-pre-wrap">{r.text}</div>
+        ),
+      )}
+    </div>
+  );
+}
+
 export const MessageItem = memo(function MessageItem(p: MessageItemProps) {
   const { message: m, isStreaming } = p;
+  const sel = useSelectionActions();
   const [copied, setCopied] = useState(false);
   const textOnly = useMemo(
     () => m.parts.filter((x): x is Extract<Part, { type: 'text' }> => x.type === 'text').map((x) => x.text).join('\n'),
@@ -102,9 +132,11 @@ export const MessageItem = memo(function MessageItem(p: MessageItemProps) {
 
   return (
     <article className={`group px-4 py-3 ${isUser ? 'bg-chat-surface/50' : ''}`} data-seq={m.seq} data-role={m.role} aria-label={`${m.role} message`}>
-      <div className={`mb-1 font-mono text-[11px] uppercase tracking-wider ${isUser ? 'text-chat-muted' : 'text-chat-accent-strong'}`}>
+      <div data-selection-ignore="" className={`mb-1 select-none font-mono text-[11px] uppercase tracking-wider ${isUser ? 'text-chat-muted' : 'text-chat-accent-strong'}`}>
         {isUser ? 'you' : m.role === 'tool' ? 'tool' : (m.model ?? 'assistant')}
       </div>
+      {/* The selectable body: selection actions read offsets against this box. */}
+      <div data-message-body="" data-message-id={m.id} data-role={m.role}>
       {m.parts.map((part, i) => {
         switch (part.type) {
           case 'reasoning':
@@ -125,11 +157,9 @@ export const MessageItem = memo(function MessageItem(p: MessageItemProps) {
             return null; // rendered inside its call block; tool rows (role==='tool') show nothing extra
           case 'text':
             return isUser ? (
-              <div key={i} className="whitespace-pre-wrap text-[14px] text-chat-fg">
-                {part.text}
-              </div>
+              <UserText key={i} text={part.text} sel={sel} />
             ) : (
-              <Markdown key={i} text={part.text} streaming={isStreaming && i === m.parts.length - 1} />
+              <Markdown key={i} text={part.text} streaming={isStreaming && i === m.parts.length - 1} blockScope={`${m.id}:${i}`} />
             );
           case 'options':
             return <OptionsButtons key={i} part={part} disabled={p.turnInFlight} onPick={(sel) => p.onPick(part.callId ?? null, sel)} />;
@@ -150,6 +180,7 @@ export const MessageItem = memo(function MessageItem(p: MessageItemProps) {
           onPick={(sel) => p.onPick(null, sel)}
         />
       )}
+      </div>
       {showConnectionLost && (
         <ErrorPart part={{ type: 'error', code: 'internal', message: 'Connection lost' }} retryable={p.isLast} onRetry={p.onRetry} />
       )}
@@ -157,7 +188,7 @@ export const MessageItem = memo(function MessageItem(p: MessageItemProps) {
         <TokenBar completion={m.usage?.completion ?? Math.ceil(textOnly.length / 4)} max={p.maxTokens} streaming />
       )}
       {!isStreaming && (
-        <footer className="mt-1 flex items-center gap-1 text-[11px] text-chat-dim opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+        <footer data-selection-ignore="" className="mt-1 flex select-none items-center gap-1 text-[11px] text-chat-dim opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
           {m.role === 'assistant' && m.usage && (
             <span className="mr-2 font-mono" title="prompt / completion / reasoning tokens">
               {m.usage.prompt} / {m.usage.completion} / {m.usage.reasoning ?? 0}
@@ -176,6 +207,11 @@ export const MessageItem = memo(function MessageItem(p: MessageItemProps) {
           >
             <Copy className="h-3.5 w-3.5" aria-hidden />
           </IconBtn>
+          {sel && textOnly.trim() && (
+            <IconBtn label={sel.labels.quoteMessage} onClick={() => sel.quoteMessage(m.id, textOnly)}>
+              <QuoteIcon className="h-3.5 w-3.5" aria-hidden />
+            </IconBtn>
+          )}
           {m.role === 'assistant' && p.isLast && p.onRegenerate && (
             <IconBtn label="Regenerate" onClick={p.onRegenerate} disabled={p.turnInFlight}>
               <RotateCcw className="h-3.5 w-3.5" aria-hidden />

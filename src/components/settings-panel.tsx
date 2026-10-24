@@ -5,12 +5,53 @@ import { Button } from '@/ui/button';
 import type { ChatSettings, ChatSummary, ModelInfo, ToolPolicy } from '../adapters/types';
 import type { Capabilities } from '../adapters/capabilities';
 import { resolveActiveModel } from '../model/resolve-model';
+import { SELECTION_DELAY_MAX_MS, SELECTION_DELAY_MIN_MS, type SelectionPrefs } from '../model/prefs';
 export interface SettingsPanelProps {
   open: boolean; onClose: () => void; chat: ChatSummary; models: ModelInfo[]; capabilities: Capabilities;
   onChange: (patch: { model?: string; settings?: Partial<ChatSettings> }) => void; onSaveDefaults: () => void;
+  /**
+   * The text-selection preferences (per browser, see `model/prefs.ts`). With
+   * both this and `onSelectionPrefsChange` the panel shows its "Text
+   * selection" section; without them it is not rendered.
+   */
+  selectionPrefs?: SelectionPrefs;
+  onSelectionPrefsChange?: (patch: Partial<SelectionPrefs>) => void;
 }
 
-function Num({ id, label, value, min, max, step, onCommit }: { id: string; label: string; value: number; min: number; max: number; step: number; onCommit: (v: number) => void }) {
+/** "Text selection": the menu's on/off switch, then its delay and what Explain does. */
+function SelectionSection({ prefs, onChange }: { prefs: SelectionPrefs; onChange: (patch: Partial<SelectionPrefs>) => void }) {
+  return (
+    <fieldset className="text-xs text-chat-muted" aria-label="Text selection">
+      <legend className="mb-1 font-mono uppercase tracking-wider text-chat-accent-strong">Text selection</legend>
+      <label className="flex items-center gap-2">
+        <input type="checkbox" role="switch" aria-checked={prefs.enabled} aria-label="Show menu when selecting text" checked={prefs.enabled}
+          onChange={(e) => onChange({ enabled: e.target.checked })} />
+        <span>Show menu when selecting text</span>
+      </label>
+      <div className={`mt-2 space-y-2 pl-5 ${prefs.enabled ? '' : 'opacity-50'}`}>
+        <Num id="seldelay" label="Menu delay (ms)" value={prefs.delayMs} min={SELECTION_DELAY_MIN_MS} max={SELECTION_DELAY_MAX_MS} step={50}
+          disabled={!prefs.enabled} onCommit={(v) => onChange({ delayMs: v })} />
+        <label className="block">
+          <span className="mb-1 block">Explain</span>
+          <select aria-label="Explain behaviour" value={prefs.explainMode} disabled={!prefs.enabled}
+            onChange={(e) => onChange({ explainMode: e.target.value as SelectionPrefs['explainMode'] })}
+            className="w-full rounded-[0.25rem] border border-chat-rule bg-chat-page px-2 py-1 text-sm text-chat-fg">
+            <option value="send">Send straight away</option>
+            <option value="prefill">Put in the message box</option>
+          </select>
+        </label>
+      </div>
+      <label className="mt-2 flex items-center gap-2">
+        <input type="checkbox" aria-label="Collect quotes as chips" checked={prefs.quoteAsChips}
+          onChange={(e) => onChange({ quoteAsChips: e.target.checked })} />
+        <span>Collect quotes as chips</span>
+      </label>
+      <p className="mt-1 text-[11px] text-chat-dim">Saved in this browser. With text selected, press Alt+Enter (Option+Return on a Mac) for the menu.</p>
+    </fieldset>
+  );
+}
+
+function Num({ id, label, value, min, max, step, onCommit, disabled }: { id: string; label: string; value: number; min: number; max: number; step: number; onCommit: (v: number) => void; disabled?: boolean }) {
   const [v, setV] = useState(String(value));
   useEffect(() => setV(String(value)), [value]);
   const commit = () => {
@@ -20,7 +61,7 @@ function Num({ id, label, value, min, max, step, onCommit }: { id: string; label
   return (
     <label className="block text-xs text-chat-muted">
       <span className="mb-1 block">{label}</span>
-      <input id={id} type="number" aria-label={label} min={min} max={max} step={step} value={v} onChange={(e) => setV(e.target.value)} onBlur={commit}
+      <input id={id} type="number" aria-label={label} disabled={disabled} min={min} max={max} step={step} value={v} onChange={(e) => setV(e.target.value)} onBlur={commit}
         onKeyDown={(e) => { if (e.key === 'Enter') commit(); }} className="w-full rounded-[0.25rem] border border-chat-rule bg-chat-page px-2 py-1 font-mono text-sm text-chat-fg" />
     </label>
   );
@@ -170,6 +211,7 @@ export function SettingsPanel(p: SettingsPanelProps) {
           <p className="mt-1 text-[11px] text-chat-dim">When the budget runs out the agent always answers once more without tools.</p>
         </fieldset>
       )}
+      {p.selectionPrefs && p.onSelectionPrefsChange && <SelectionSection prefs={p.selectionPrefs} onChange={p.onSelectionPrefsChange} />}
       <div className="mt-auto">
         <Button variant="outline" size="sm" className="w-full" onClick={p.onSaveDefaults}>Save as my defaults</Button>
         <p className="mt-1 text-[11px] text-chat-dim">Changes apply to the next turn and are snapshotted on each message.</p>

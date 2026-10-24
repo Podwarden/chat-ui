@@ -37,3 +37,63 @@ export function writeReasoningOpen(open: boolean): void {
     // A preference that cannot be persisted still applies for this session.
   }
 }
+
+export const SELECTION_PREFS_KEY = 'chat2:selectionActions';
+
+/**
+ * The user's selection-actions preferences (Settings → "Text selection").
+ *
+ * Per browser like `reasoningOpen`: how a menu behaves under the user's mouse
+ * is the person's choice, not the chat's, so it is never sent to the backend.
+ */
+export interface SelectionPrefs {
+  /** "Show menu when selecting text" — the floating menu, the touch dock and the shortcut. */
+  enabled: boolean;
+  /** How long a finished selection must stay put before the menu appears (ms). */
+  delayMs: number;
+  /** "Explain" sends a message at once, or only puts it in the message box. */
+  explainMode: 'send' | 'prefill';
+  /** Quote stages a removable chip above the message box instead of inserting raw text. */
+  quoteAsChips: boolean;
+}
+
+export const DEFAULT_SELECTION_PREFS: SelectionPrefs = {
+  enabled: true,
+  delayMs: 300,
+  explainMode: 'send',
+  quoteAsChips: true,
+};
+
+/** The bounds the settings UI and the reader both enforce on `delayMs`. */
+export const SELECTION_DELAY_MIN_MS = 0;
+export const SELECTION_DELAY_MAX_MS = 3000;
+
+/**
+ * Only the keys the user has actually set — so a host's own defaults (the
+ * `selectionActions` prop) still apply to everything they have not touched.
+ * Malformed or out-of-range values are dropped, never thrown.
+ */
+export function readSelectionPrefs(): Partial<SelectionPrefs> {
+  try {
+    const raw = localStorage.getItem(SELECTION_PREFS_KEY);
+    if (!raw) return {};
+    const v = JSON.parse(raw) as Record<string, unknown>;
+    const out: Partial<SelectionPrefs> = {};
+    if (typeof v.enabled === 'boolean') out.enabled = v.enabled;
+    if (typeof v.delayMs === 'number' && Number.isFinite(v.delayMs) && v.delayMs >= SELECTION_DELAY_MIN_MS && v.delayMs <= SELECTION_DELAY_MAX_MS) out.delayMs = v.delayMs;
+    if (v.explainMode === 'send' || v.explainMode === 'prefill') out.explainMode = v.explainMode;
+    if (typeof v.quoteAsChips === 'boolean') out.quoteAsChips = v.quoteAsChips;
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+/** Merges `patch` into what is stored (the keys the user has set so far). */
+export function writeSelectionPrefs(patch: Partial<SelectionPrefs>): void {
+  try {
+    localStorage.setItem(SELECTION_PREFS_KEY, JSON.stringify({ ...readSelectionPrefs(), ...patch }));
+  } catch {
+    // applies for this session only
+  }
+}

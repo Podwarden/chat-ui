@@ -30,7 +30,10 @@ import { DEFAULT_CAPABILITIES, type Capabilities, type ScopeOption } from '../ad
 import { AdaptersProvider, useAdapters } from '../adapters/context';
 import { ChatThemeProvider, type ChatTheme } from '../theme/context';
 import { ApiError, type Adapters, type AttachmentOut, type ChatSettings, type ModelInfo } from '../adapters/types';
-import { readReasoningOpen, writeReasoningOpen } from '../model/prefs';
+import { DEFAULT_SELECTION_PREFS, readReasoningOpen, readSelectionPrefs, writeReasoningOpen, writeSelectionPrefs, type SelectionPrefs } from '../model/prefs';
+import { MAX_QUOTES, appendQuoteToDraft, serializeQuotes, type QuickAction, type Quote } from '../model/selection';
+import { SelectionActions, SelectionDock } from '../components/selection/selection-actions';
+import type { SelectionLabels } from '../components/selection/context';
 import { resolveActiveModel } from '../model/resolve-model';
 import { useChats } from '../hooks/use-chats';
 import { useChatThread } from '../hooks/use-chat-thread';
@@ -89,6 +92,29 @@ function errorText(e: unknown, fallback: string): string {
   return e instanceof ApiError || e instanceof Error ? (e.message || fallback) : fallback;
 }
 
+/**
+ * Text-selection actions as `<ChatApp>` wires them. Every key is optional;
+ * keep the object stable (module-level or memoized).
+ */
+export interface SelectionActionsOptions {
+  /** The host's defaults; whatever the user changes in Settings → Text selection wins. */
+  defaults?: Partial<SelectionPrefs>;
+  /**
+   * "Branch into a new chat" from a selection. Default: fork the open chat at
+   * that message (the same fork the "Fork here" action makes), open the new
+   * chat and stage the quote in its composer. Pass your own to route it
+   * elsewhere (e.g. a side panel).
+   */
+  onBranchFrom?: (messageId: string, quote: Quote) => void;
+  /** Replaces the built-in More ▸ actions (Simplify, Make shorter, Give an example). */
+  quickActions?: readonly QuickAction[];
+  /** Language codes Translate offers; the browser's language always comes first. */
+  translateLanguages?: readonly string[];
+  /** `'auto'` (default): docked bar on touch, floating menu on a mouse. */
+  touchMode?: 'auto' | 'dock' | 'float';
+  labels?: Partial<SelectionLabels>;
+}
+
 export interface ChatAppProps {
   /** Everything outside the UI: transport, storage, models, billing. */
   adapters: Adapters;
@@ -128,6 +154,13 @@ export interface ChatAppProps {
    * tell the viewer's own chats from a colleague's in the sidebar.
    */
   currentUserId?: string;
+  /**
+   * Text-selection actions (menu over selected text, quote chips, "Quote" on
+   * a message, "Ask" on a code block). On by default; `false` removes all of
+   * it, including the Settings section — e.g. a deployment that must not
+   * offer it.
+   */
+  selectionActions?: SelectionActionsOptions | false;
 }
 
 /**
@@ -155,6 +188,7 @@ function ChatAppInner({
   rootInertId,
   labels: labelsOverride,
   currentUserId,
+  selectionActions,
 }: ChatAppProps) {
   // `initialChatId` is a seed, not a controlled value: the selection is this
   // component's state from the first render on, and a host that wants to drive
@@ -181,6 +215,27 @@ function ChatAppInner({
     setReasoningOpen(open);
     writeReasoningOpen(open);
   }, []);
+  // Text-selection preferences: the host's defaults under what the user set
+  // in this browser (read after mount for the same SSR reason as above).
+  const selectionOn = selectionActions !== false;
+  const selOpts = selectionActions || undefined;
+  const [storedSelPrefs, setStoredSelPrefs] = useState<Partial<SelectionPrefs>>({});
+  useEffect(() => { setStoredSelPrefs(readSelectionPrefs()); }, []);
+  const selectionPrefs = useMemo<SelectionPrefs>(
+    () => ({ ...DEFAULT_SELECTION_PREFS, ...selOpts?.defaults, ...storedSelPrefs }),
+    [selOpts?.defaults, storedSelPrefs],
+  );
+  const selectionPrefsRef = useRef(selectionPrefs); selectionPrefsRef.current = selectionPrefs;
+  const onSelectionPrefsChange = useCallback((patch: Partial<SelectionPrefs>) => {
+    writeSelectionPrefs(patch);
+    setStoredSelPrefs((prev) => ({ ...prev, ...patch }));
+  }, []);
+  // Quotes staged above the composer (chips), and a counter that asks the
+  // composer to take focus with the caret at the end.
+  const [quotes, setQuotes] = useState<Quote[]>([]);
+  const quotesRef = useRef(quotes); quotesRef.current = quotes;
+  const [focusSignal, setFocusSignal] = useState(0);
+  const bumpFocus = useCallback(() => setFocusSignal((n) => n + 1), []);
   // Sidebar/dialog mutations are fire-and-forget from the UI's point of view;
   // this is where their rejections surface instead of vanishing into a `void`.
   const [actionError, setActionError] = useState<string | null>(null);
@@ -348,10 +403,13 @@ function ChatAppInner({
           : undefined;
 
   const send = useCallback(async () => {
-    const text = inputRef.current.trim();
+    // staged quotes go first, as blockquotes / fences, then what was typed
+    const text = serializeQuotes(quotesRef.current, inputRef.current);
     const ids = draftsRef.current.readyIds;
     if (!text && ids.length === 0) return;
     setInput('');
+    quotesRef.current = [];
+    setQuotes([]);
     // The drafts are NOT cleared here: whether they may be dropped depends on
     // whether the turn reached the database, which is only knowable from the
     // hook's state once it has committed (see the effect below).
@@ -504,6 +562,49 @@ function ChatAppInner({
   const onAddFiles = drafts.add;
   const onRemoveDraft = drafts.remove;
 
+  // ---- selection actions → composer / transport ----------------------------
+  const stageQuote = useCallback((q: Quote, opts: { chip: boolean }): void | false => {
+    const asChip = opts.chip || selectionPrefsRef.current.quoteAsChips || quotesRef.current.length > 0;
+    if (asChip) {
+      if (quotesRef.current.length >= MAX_QUOTES) return false;
+      const next = [...quotesRef.current, q];
+      quotesRef.current = next;
+      setQuotes(next);
+    } else {
+      const next = appendQuoteToDraft(inputRef.current, q);
+      inputRef.current = next;
+      setInput(next);
+    }
+    bumpFocus();
+  }, [bumpFocus]);
+  const removeQuote = useCallback((id: string) => {
+    const next = quotesRef.current.filter((q) => q.id !== id);
+    quotesRef.current = next;
+    setQuotes(next);
+  }, []);
+  const sendNow = useCallback((text: string) => { void threadRef.current.sendPlain(text); }, []);
+  const prefill = useCallback((text: string) => {
+    const head = inputRef.current.replace(/\s+$/, '');
+    const next = head ? head + '\n\n' + text : text;
+    inputRef.current = next;
+    setInput(next);
+    bumpFocus();
+  }, [bumpFocus]);
+  const hostBranch = selOpts?.onBranchFrom;
+  const branchFrom = useCallback(async (messageId: string, quote: Quote) => {
+    if (hostBranch) { hostBranch(messageId, quote); return; }
+    const chatId = selectedIdRef.current;
+    const m = threadRef.current.state.messages.find((x) => x.id === messageId);
+    if (!chatId || !m || !isForkable(m.seq)) { setActionError('That message cannot be branched from yet.'); return; }
+    try {
+      const c = await chatsApiRef.current.fork(chatId, m.seq);
+      setSelectedId(c.id);
+      // the new chat's composer starts with the passage quoted
+      stageQuote(quote, { chip: false });
+    } catch (e) { setActionError(errorText(e, 'Could not branch the chat')); }
+  }, [hostBranch, stageQuote]);
+  const onBranchFrom = useCallback((messageId: string, quote: Quote) => { void branchFrom(messageId, quote); }, [branchFrom]);
+
   const changeSettings = useCallback((patch: { model?: string; settings?: Partial<ChatSettings> }) => {
     settingsPatchRef.current = threadRef.current.updateSettings(patch)
       .catch((e: unknown) => setActionError(errorText(e, 'Could not update the chat settings')));
@@ -538,6 +639,12 @@ function ChatAppInner({
         scopeOptions={scopeOptions} selectedScopeId={selectedScopeId} onScopeChange={setSelectedScopeId}
         labels={labels} rootInertId={rootInertId}
       />
+      <SelectionScope
+        on={selectionOn} prefs={selectionPrefs} onQuote={stageQuote} onSend={sendNow} onPrefill={prefill}
+        canSend={!disabledReason && !streaming} onBranchFrom={onBranchFrom} messages={thread.state.messages}
+        quickActions={selOpts?.quickActions} translateLanguages={selOpts?.translateLanguages}
+        touchMode={selOpts?.touchMode} labels={selOpts?.labels}
+      >
       <section className="relative flex min-w-0 flex-1 flex-col">
         <header className="flex items-center gap-3 border-b border-chat-rule px-4 py-2">
           <h1 className="flex min-w-0 items-baseline gap-1.5 font-mono text-sm text-chat-fg">
@@ -584,19 +691,25 @@ function ChatAppInner({
             onOpenSettings={capabilities.settings === 'hidden' ? undefined : openSettings}
             actionError={actionError} onDismissActionError={() => setActionError(null)}
           />
+          {selectionOn && <SelectionDock />}
           <Composer
             value={input} onChange={setInput} onSend={() => void send()} onAbort={onAbort} isStreaming={streaming}
             disabled={!!disabledReason} disabledReason={disabledReason} drafts={drafts.drafts}
             canAttach={canAttach} attachDisabledReason={attachDisabledReason}
             onAddFiles={onAddFiles} onRemoveDraft={onRemoveDraft} onPaste={onPaste}
             capabilities={capabilities} focusKey={selectedId}
+            quotes={selectionOn ? quotes : undefined} onRemoveQuote={selectionOn ? removeQuote : undefined}
+            focusSignal={focusSignal}
           />
         </div>
       </section>
+      </SelectionScope>
       {capabilities.settings !== 'hidden' && thread.chat && (
         <SettingsPanel
           open={settingsOpen} onClose={() => setSettingsOpen(false)} chat={thread.chat} models={models}
           capabilities={capabilities} onChange={changeSettings} onSaveDefaults={saveDefaults}
+          selectionPrefs={selectionOn ? selectionPrefs : undefined}
+          onSelectionPrefsChange={selectionOn ? onSelectionPrefsChange : undefined}
         />
       )}
       {forkReq && (
@@ -608,4 +721,13 @@ function ChatAppInner({
       <Lightbox attachment={lightbox} onClose={() => setLightbox(null)} rootInertId={rootInertId} />
     </div>
   );
+}
+
+/**
+ * <SelectionActions> around the thread + composer column, or the column as
+ * is when the host turned selection actions off.
+ */
+function SelectionScope({ on, children, ...rest }: { on: boolean; children: React.ReactNode } & Omit<React.ComponentProps<typeof SelectionActions>, 'children' | 'className'>) {
+  if (!on) return <>{children}</>;
+  return <SelectionActions {...rest} className="flex min-w-0 flex-1">{children}</SelectionActions>;
 }
