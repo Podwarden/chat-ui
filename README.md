@@ -156,11 +156,21 @@ into your own app with no attribution obligations.
   and Branch into a new chat. On a touch screen it docks above the composer
   instead.
 
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/selection-dark.png">
+    <img alt="A reply with the words the area of a circle selected and a menu over them: Copy, Quote, Explain, Ask and More" src="docs/assets/selection-light.png" width="900">
+  </picture>
+
 - **A widget for every page**: `<ChatWidget>` puts the same chat behind a
   bottom-corner launcher in a pop-up panel, the way support chats work, with
   its dialogs kept inside the panel and a full-screen panel on a phone. In any
   box narrower than 640 px `<ChatApp>` goes compact by itself: the chat list
   becomes a drawer and settings an overlay.
+
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/widget-dark.png">
+    <img alt="A host page with the chat open as a panel in the bottom-right corner above a round launcher button, showing the Markdown and math showcase conversation" src="docs/assets/widget-light.png" width="900">
+  </picture>
 
 - **Theming** through 17 semantic `--chat-*` tokens and a Tailwind preset, so
   a host restyles the whole UI without overriding a single component.
@@ -169,6 +179,11 @@ into your own app with no attribution obligations.
   (English defaults, merged per group), and a `locale` prop drives number,
   price and date formatting and the language names in Translate. Plurals go
   through the host's own i18n library or the exported `selectPlural`.
+
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/labels-dark.png">
+    <img alt="The chat with a German catalog: Neuer Chat, Filtern, Älter, Alle Chats löschen, a Nachricht placeholder and the token gauge formatted as 160 + 1.024 reserviert / 8.192" src="docs/assets/labels-light.png" width="900">
+  </picture>
 
 ## Used in production
 

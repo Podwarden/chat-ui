@@ -4,6 +4,23 @@ All notable changes to `@podwarden/chat-ui`. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are semver,
 and each release is cut as a `vX.Y.Z` git tag.
 
+## [0.1.28] - 2026-10-26
+
+### Fixed
+
+- **A chat opened in a short box now starts at its last line.** The transcript
+  re-pinned to the bottom only when messages were added; rows that grew after
+  landing (Shiki highlighting a block, KaTeX typesetting, a narrow widget
+  panel re-wrapping the text) left it above the end, behind "Jump to latest".
+  While the user has not scrolled away, any change in the list's height now
+  re-pins it.
+
+### Docs
+
+- README screenshots of the selection-actions menu, the German catalog
+  (labels and `locale` from 0.1.26) and `<ChatWidget>`, light and dark,
+  captured from the live demo.
+
 ## [0.1.27] - 2026-10-26
 
 ### Added

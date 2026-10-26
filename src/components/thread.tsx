@@ -135,6 +135,15 @@ export function Thread(p: ThreadProps) {
   //     auto-scrolls when the list is ALREADY at the bottom, so it self-gates
   //     the re-pin and never yanks a reader who has scrolled up.
   const [follow, setFollow] = useState(true);
+  const followRef = useRef(follow); followRef.current = follow;
+  // `followOutput` re-pins only when DATA changes. Rows that grow after they
+  // landed — Shiki highlighting a block, KaTeX typesetting, a narrow widget
+  // panel re-wrapping the text — moved the bottom away with nobody scrolling,
+  // and a chat opened in a short box sat above its last line behind "Jump to
+  // latest". While following, any height change re-pins.
+  const onTotalHeightChanged = useCallback(() => {
+    if (followRef.current) ref.current?.scrollToIndex({ index: 'LAST', align: 'end' });
+  }, []);
   const [showJump, setShowJump] = useState(false);
   const atBottomRef = useRef(true);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -313,6 +322,7 @@ export function Thread(p: ThreadProps) {
         style={{ height: '100%' }}
         data={msgs}
         followOutput="auto"
+        totalListHeightChanged={onTotalHeightChanged}
         atBottomStateChange={onAtBottomStateChange}
         computeItemKey={(_, m) => m.id}
         itemContent={(i, m) => (
