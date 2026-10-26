@@ -4,6 +4,14 @@ All notable changes to `@podwarden/chat-ui`. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are semver,
 and each release is cut as a `vX.Y.Z` git tag.
 
+## [0.1.30] - 2026-10-26
+
+### Docs
+
+- README screenshots of the 0.1.29 mobile work: Settings ▸ Text size with the
+  conversation at 130%, and the widget full screen on a phone, light and
+  dark, captured from the live demo.
+
 ## [0.1.29] - 2026-10-26
 
 ### Added

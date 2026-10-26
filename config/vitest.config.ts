@@ -12,5 +12,9 @@ export default defineConfig({
   root,
   plugins: [react()],
   resolve: { alias: { '@': path.resolve(root, 'src') } },
-  test: { environment: 'jsdom', globals: true, setupFiles: ['tests/setup.ts'], include: ['tests/**/*.test.{ts,tsx}'], css: false },
+  // testTimeout: the component tests drive whole flows (render, load, type,
+  // stream, open dialogs) and take 1–3 s on a quiet machine; the shared CI
+  // runner under load doubled that and the 5 s default failed them on time
+  // alone (2026-10-26). A hung test still fails, just later.
+  test: { environment: 'jsdom', globals: true, setupFiles: ['tests/setup.ts'], include: ['tests/**/*.test.{ts,tsx}'], css: false, testTimeout: 15_000 },
 });

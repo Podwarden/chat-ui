@@ -174,6 +174,22 @@ into your own app with no attribution obligations.
     <img alt="A host page with the chat open as a panel in the bottom-right corner above a round launcher button, showing the Markdown and math showcase conversation" src="docs/assets/widget-light.png" width="900">
   </picture>
 
+- **Readable on a phone**: pinch the conversation to resize its text, and it
+  re-wraps to the screen instead of running off it; Settings ▸ Text size
+  does the same with buttons. On a phone the widget fills the screen and
+  stays above the keyboard, and tapping the message box no longer zooms the
+  page.
+
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/text-size-dark.png">
+    <img alt="The conversation at 130% text size, with the Settings panel open on its Text size row: smaller, 130%, larger" src="docs/assets/text-size-light.png" width="900">
+  </picture>
+
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/phone-dark.png">
+    <img alt="The chat widget full screen on a phone: chat-list button, conversation title, the Python example and formula, and a one-line Message box" src="docs/assets/phone-light.png" width="300">
+  </picture>
+
 - **Theming** through 17 semantic `--chat-*` tokens and a Tailwind preset, so
   a host restyles the whole UI without overriding a single component.
 - **Localisable**: every string it renders, including `aria-label`s, toasts and
