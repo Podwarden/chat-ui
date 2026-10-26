@@ -1,7 +1,7 @@
 'use client';
 
 import { Paperclip, Send, Square } from 'lucide-react';
-import { useEffect, useRef, type ClipboardEvent, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useRef, type ClipboardEvent, type KeyboardEvent } from 'react';
 import { Button } from '@/ui/button';
 import { ALLOWED_IMAGE_MIMES } from '../model/limits';
 import type { Capabilities } from '../adapters/capabilities';
@@ -85,15 +85,35 @@ export function Composer(p: ComposerProps) {
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // auto-grow: reset to 0 first so the textarea can also shrink back down
-  useEffect(() => {
+  const taDisabled = p.disabled && !p.isStreaming;
+  const placeholder = p.disabled ? (p.disabledReason ?? l.unavailable) : p.compact ? l.compactPlaceholder : l.placeholder;
+
+  // auto-grow: reset to 0 first so the textarea can also shrink back down.
+  // An empty field's scrollHeight is its PLACEHOLDER's, and a wrapped line's
+  // height depends on the width — so a placeholder change (the compact
+  // layout's short one arriving after the first measure, a disabled reason)
+  // and a width change (a resized widget) re-measure too. Without them the
+  // empty box kept the full placeholder's six wrapped lines on a phone.
+  const fit = useCallback(() => {
     const ta = taRef.current;
     if (!ta) return;
     ta.style.height = '0px';
     ta.style.height = `${Math.min(ta.scrollHeight, MAX_ROWS_PX)}px`;
-  }, [p.value]);
-
-  const taDisabled = p.disabled && !p.isStreaming;
+  }, []);
+  useEffect(fit, [p.value, placeholder, fit]);
+  useEffect(() => {
+    const ta = taRef.current;
+    if (!ta || typeof ResizeObserver === 'undefined') return;
+    let width = ta.clientWidth;
+    const ro = new ResizeObserver(() => {
+      // only width: `fit` itself changes the height
+      if (ta.clientWidth === width) return;
+      width = ta.clientWidth;
+      fit();
+    });
+    ro.observe(ta);
+    return () => ro.disconnect();
+  }, [fit]);
 
   // Take focus on mount, on chat switch and when the field re-enables — the
   // message box is where typing belongs, and nothing else ever hands focus
@@ -218,11 +238,7 @@ export function Composer(p: ComposerProps) {
           rows={1}
           // stays enabled while streaming so Esc can stop the turn
           disabled={taDisabled}
-          placeholder={
-            p.disabled
-              ? (p.disabledReason ?? l.unavailable)
-              : p.compact ? l.compactPlaceholder : l.placeholder
-          }
+          placeholder={placeholder}
           aria-label={l.messageLabel}
           className="max-h-48 min-h-[2.25rem] flex-1 resize-none rounded-[0.25rem] bg-chat-page px-3 py-2 font-mono text-sm text-chat-fg placeholder:text-chat-dim focus:[outline:none] focus:ring-2 focus:ring-chat-accent"
         />

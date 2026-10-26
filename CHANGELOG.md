@@ -4,6 +4,54 @@ All notable changes to `@podwarden/chat-ui`. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are semver,
 and each release is cut as a `vX.Y.Z` git tag.
 
+## [0.1.29] - 2026-10-26
+
+### Added
+
+- **Pinch to resize the conversation's text.** Two fingers in the transcript
+  scale its text from 80% to 200%, and it re-wraps to the width (CSS `zoom` on
+  each row) instead of running off the screen the way page zoom does. The
+  line under the fingers stays put; the page itself does not zoom. Kept per
+  browser. `<ChatApp textScale | defaultTextScale | onTextScaleChange>`;
+  `pinchToZoomText={false}` leaves the pinch to the browser.
+- **Settings ▸ Text size**: smaller, the percentage (resets to 100%), larger.
+  Labels `settings.textSize`, `textSmaller`, `textLarger`, `textSizeReset`,
+  `textSizeValue`, `textSizeHint`.
+- **`<ChatWidget resizable movable>`**, both off by default. Resizable: drag
+  handles on the edges facing the page, a corner handle that takes arrow keys,
+  and a maximize / restore button. Movable: drag the header, or arrow keys on
+  its move button. Double-click puts the panel back. The geometry is clamped
+  to the viewport and remembered in this browser (`rememberLayout`, default
+  `true`); `onLayoutChange` reports it as a `WidgetLayout` (exported). Labels
+  `widget.resize`, `move`, `maximize`, `restore`.
+- **Demo:** the widget view is resizable and movable.
+
+### Changed
+
+- **A pinch in the transcript is the chat's, not the page's, by default.**
+  Hosts that pass none of the new props get the text-resizing pinch in the
+  transcript; outside it a pinch is still the browser's page zoom, as is
+  every pinch with `pinchToZoomText={false}`. Text tops out at 200%; a host
+  whose readers need more than that (or page zoom everywhere) turns it off.
+
+### Fixed
+
+- **iOS no longer zooms the page when the message box is tapped.** On touch
+  screens every field the chat renders is at least 16 px (`theme.css`,
+  scoped to `[data-chat-root]`).
+- **The full-screen widget panel follows the visual viewport**, so the
+  on-screen keyboard shrinks it instead of covering the composer, and it is
+  padded out of the notch and home-indicator areas; the launcher clears the
+  home indicator too.
+- **An empty message box on a phone was six lines tall.** Its height was
+  measured from the full placeholder before the compact layout swapped in the
+  short one, and never again; it now re-measures when the placeholder or its
+  width changes.
+- **A two-finger gesture no longer stops the transcript following new text**
+  (it read as "scrolled up").
+- **The sidebar's Fork button is visible on screens without hover**, where
+  hover-revealed meant never shown.
+
 ## [0.1.28] - 2026-10-26
 
 ### Fixed

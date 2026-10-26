@@ -15,8 +15,19 @@
 // support chat's does. Escape inside it closes it (after any dialog, drawer or
 // settings overlay of the chat's own, which take the key first) and focus
 // returns to the launcher.
+//
+// Geometry: by default the panel is `width` × `height` above the launcher.
+// `resizable` adds handles on the edges facing the page (and a maximize
+// button); `movable` lets the header drag it. Either way the result is held
+// as pixels measured from the launcher's corner — so the anchor stays the same
+// edge when the window changes — clamped to the viewport on every render, and
+// remembered in this browser unless `rememberLayout` is false.
+//
+// Full screen (narrow viewports) follows the VISUAL viewport, so the
+// on-screen keyboard shrinks the panel instead of covering the composer, and
+// pads itself out of the notch and home-indicator areas.
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
-import { ExternalLink, MessageCircle, X } from 'lucide-react';
+import { ExternalLink, Maximize2, MessageCircle, Minimize2, Move, X } from 'lucide-react';
 import { Button } from '@/ui/button';
 import { cn } from '@/ui/cn';
 import { ChatApp, type ChatAppProps } from './chat-app';
@@ -48,6 +59,76 @@ export interface ChatWidgetProps extends Omit<ChatAppProps, 'layout' | 'portalCo
   launcherClassName?: string;
   /** Extra classes for the panel. */
   panelClassName?: string;
+  /** Drag handles on the panel's edges facing the page, and a maximize button (default `false`). */
+  resizable?: boolean;
+  /** Drag the panel by its header (default `false`). Double-click the header to put it back. */
+  movable?: boolean;
+  /** Keep the size and place the user chose in this browser (default `true`; only with `resizable` or `movable`). */
+  rememberLayout?: boolean;
+  /** The user resized, moved, maximized or reset the panel; `null` is the default geometry. */
+  onLayoutChange?: (layout: WidgetLayout | null) => void;
+}
+
+/**
+ * The panel's chosen geometry, in CSS pixels: its size, and its distance from
+ * the launcher's side (`x`) and from the bottom (`y`) of the viewport.
+ */
+export interface WidgetLayout { width: number; height: number; x: number; y: number }
+
+const LAYOUT_KEY = 'chat2:widgetLayout';
+/** Smallest panel a drag produces (the compact layout's floor), and the gap kept to the viewport's edges. */
+const MIN_W = 320;
+const MIN_H = 384;
+const GAP = 8;
+/** Arrow-key step for the resize and move handles; Shift multiplies it. */
+const KEY_STEP = 16;
+
+function readLayout(): WidgetLayout | null {
+  try {
+    const v = JSON.parse(localStorage.getItem(LAYOUT_KEY) ?? 'null') as Partial<WidgetLayout> | null;
+    if (!v || ![v.width, v.height, v.x, v.y].every((n) => typeof n === 'number' && Number.isFinite(n))) return null;
+    return v as WidgetLayout;
+  } catch { return null; }
+}
+function writeLayout(l: WidgetLayout | null): void {
+  try { if (l) localStorage.setItem(LAYOUT_KEY, JSON.stringify(l)); else localStorage.removeItem(LAYOUT_KEY); }
+  catch { /* applies for this session only */ }
+}
+
+/** `l` inside a `vw` × `vh` viewport: never smaller than the floor allows, never past an edge. */
+export function clampLayout(l: WidgetLayout, vw: number, vh: number): WidgetLayout {
+  const width = Math.max(Math.min(MIN_W, vw - 2 * GAP), Math.min(l.width, vw - 2 * GAP));
+  const height = Math.max(Math.min(MIN_H, vh - 2 * GAP), Math.min(l.height, vh - 2 * GAP));
+  const x = Math.min(Math.max(GAP, l.x), Math.max(GAP, vw - width - GAP));
+  const y = Math.min(Math.max(GAP, l.y), Math.max(GAP, vh - height - GAP));
+  return { width: Math.round(width), height: Math.round(height), x: Math.round(x), y: Math.round(y) };
+}
+
+/** The viewport's size, kept current; the layout is clamped against it. */
+function useViewportSize(): { vw: number; vh: number } {
+  const [size, setSize] = useState({ vw: 0, vh: 0 });
+  useEffect(() => {
+    const on = () => setSize({ vw: window.innerWidth, vh: window.innerHeight });
+    on();
+    window.addEventListener('resize', on);
+    return () => window.removeEventListener('resize', on);
+  }, []);
+  return size;
+}
+
+/** The visual viewport's height and top (the part the on-screen keyboard leaves), while `on`. */
+function useVisualViewport(on: boolean): { height: number; top: number } | null {
+  const [vv, setVv] = useState<{ height: number; top: number } | null>(null);
+  useEffect(() => {
+    const v = typeof window !== 'undefined' ? window.visualViewport : null;
+    if (!on || !v) { setVv(null); return; }
+    const update = () => setVv({ height: v.height, top: v.offsetTop });
+    update();
+    v.addEventListener('resize', update);
+    v.addEventListener('scroll', update);
+    return () => { v.removeEventListener('resize', update); v.removeEventListener('scroll', update); };
+  }, [on]);
+  return vv;
 }
 
 /** Whether `query` matches, kept current; `false` on the server and before mount. */
@@ -94,6 +175,10 @@ function ChatWidgetInner({
   // the open chat's id is not what it is for. A host that wants it says so.
   syncUrlParam = null,
   onStreamingChange,
+  resizable = false,
+  movable = false,
+  rememberLayout = true,
+  onLayoutChange,
   ...chatProps
 }: ChatWidgetProps) {
   const { labels: { widget: l } } = useChatLabels();
@@ -125,6 +210,110 @@ function ChatWidgetInner({
   }, []);
 
   const fullScreen = useMediaQuery(fullScreenBelow > 0 ? `(max-width: ${fullScreenBelow - 0.02}px)` : null);
+  const visual = useVisualViewport(open && fullScreen);
+
+  // ---- resize / move ---------------------------------------------------------
+  const side = position === 'bottom-left' ? 'left' : 'right';
+  const adjustable = (resizable || movable) && !fullScreen;
+  const persist = (resizable || movable) && rememberLayout;
+  const { vw, vh } = useViewportSize();
+  const [layoutState, setLayoutState] = useState<WidgetLayout | null>(null);
+  // Stored geometry is read after mount: the server has no localStorage, and
+  // the first client render must match what it sent.
+  useEffect(() => { if (persist) setLayoutState(readLayout()); }, [persist]);
+  const layout = adjustable && layoutState && vw > 0 ? clampLayout(layoutState, vw, vh) : null;
+  // The size to go back to while maximized (`undefined`: not maximized).
+  // While maximized, THIS is what is stored, not the maximized geometry: a
+  // reload comes back restored, with a button that says "Maximize".
+  const [maxRestore, setMaxRestore] = useState<WidgetLayout | null | undefined>(undefined);
+  const onLayoutChangeRef = useRef(onLayoutChange); onLayoutChangeRef.current = onLayoutChange;
+  const commitLayout = useCallback((next: WidgetLayout | null, stored: WidgetLayout | null = next) => {
+    setLayoutState(next);
+    if (persist) writeLayout(stored);
+    onLayoutChangeRef.current?.(next);
+  }, [persist]);
+  /** Where the panel is now, as a layout — the starting point of any drag. */
+  const currentLayout = useCallback((): WidgetLayout | null => {
+    if (layout) return layout;
+    const r = panel?.getBoundingClientRect();
+    if (!r) return null;
+    return { width: r.width, height: r.height, x: side === 'right' ? window.innerWidth - r.right : r.left, y: window.innerHeight - r.bottom };
+  }, [layout, panel, side]);
+  /**
+   * One pointer drag. `edges` names what moves with the pointer: `move` the
+   * whole panel, otherwise the edges being dragged (`top`, and `inner` — the
+   * side facing the page). The listeners are on `window`, so the drag
+   * survives its handle unmounting (full screen kicking in on a rotation,
+   * `resizable` turning off): the effect below ends it, committed. Nothing
+   * is committed until the pointer actually MOVES — a click on the header
+   * is a click, not a layout.
+   */
+  const endDragRef = useRef<(() => void) | null>(null);
+  useEffect(() => () => endDragRef.current?.(), [adjustable]);
+  const startDrag = (e: React.PointerEvent, edges: { move?: boolean; top?: boolean; inner?: boolean }) => {
+    if (e.button !== 0) return;
+    const from = currentLayout();
+    if (!from) return;
+    e.preventDefault();
+    endDragRef.current?.();
+    const x0 = e.clientX; const y0 = e.clientY;
+    // a pointer moving right shrinks a right-anchored panel's inner edge
+    const dirX = side === 'right' ? -1 : 1;
+    let last: WidgetLayout | null = null;
+    const move = (ev: PointerEvent) => {
+      const dx = (ev.clientX - x0) * dirX; const dy = y0 - ev.clientY;
+      if (!last && !dx && !dy) return;
+      const next = edges.move
+        ? { ...from, x: from.x + dx, y: from.y + dy }
+        : { ...from, width: edges.inner ? from.width + dx : from.width, height: edges.top ? from.height + dy : from.height };
+      last = clampLayout(next, window.innerWidth, window.innerHeight);
+      setLayoutState(last);
+    };
+    const end = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', end);
+      window.removeEventListener('pointercancel', end);
+      endDragRef.current = null;
+      if (!last) return;
+      setMaxRestore(undefined);
+      commitLayout(last);
+    };
+    endDragRef.current = end;
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', end);
+    window.addEventListener('pointercancel', end);
+  };
+  const onHandleKey = (e: React.KeyboardEvent, kind: 'resize' | 'move') => {
+    const step = (e.shiftKey ? 4 : 1) * KEY_STEP;
+    // arrows point where the edge (or panel) goes, on either side
+    const toPage = side === 'right' ? 'ArrowLeft' : 'ArrowRight';
+    const toEdge = side === 'right' ? 'ArrowRight' : 'ArrowLeft';
+    const dx = e.key === toPage ? step : e.key === toEdge ? -step : 0;
+    const dy = e.key === 'ArrowUp' ? step : e.key === 'ArrowDown' ? -step : 0;
+    if (!dx && !dy) return;
+    e.preventDefault();
+    const from = currentLayout();
+    if (!from) return;
+    const next = kind === 'move' ? { ...from, x: from.x + dx, y: from.y + dy } : { ...from, width: from.width + dx, height: from.height + dy };
+    setMaxRestore(undefined);
+    commitLayout(clampLayout(next, window.innerWidth, window.innerHeight));
+  };
+  const maximized = maxRestore !== undefined;
+  const toggleMaximize = () => {
+    if (maximized) { commitLayout(maxRestore ?? null); setMaxRestore(undefined); return; }
+    setMaxRestore(layoutState);
+    // every pixel the launcher leaves: it stays on screen below the panel
+    const bottom = launcherGap();
+    commitLayout(
+      clampLayout({ width: window.innerWidth, height: window.innerHeight - bottom - GAP, x: GAP, y: bottom }, window.innerWidth, window.innerHeight),
+      layoutState,
+    );
+  };
+  /** The default panel's distance from the bottom: above the launcher. */
+  const launcherGap = () => {
+    const r = launcherRef.current?.getBoundingClientRect();
+    return r ? window.innerHeight - r.top + 12 : GAP;
+  };
 
   // Focus follows the panel: into the composer on open (the panel itself when
   // the composer cannot take it yet), back to the launcher on close — but
@@ -175,17 +364,29 @@ function ChatWidgetInner({
 
   const titleId = useId();
   const panelId = useId();
-  const side = position === 'bottom-left' ? 'left' : 'right';
-  // Launcher: 3.5rem square; the panel stands 0.75rem above it.
+  // Launcher: 3.5rem square; the panel stands 0.75rem above it. Both keep
+  // clear of the home indicator (`safe-area-inset-bottom`, 0 elsewhere).
+  const bottomInset = 'env(safe-area-inset-bottom, 0px)';
   const panelStyle: React.CSSProperties = fullScreen
-    ? { zIndex, inset: 0, width: '100%', height: '100%' }
-    : {
-        zIndex,
-        [side]: offset,
-        bottom: `calc(${offset} + 4.25rem)`,
-        width: `min(${width}, calc(100vw - 2 * ${offset}))`,
-        height: `min(${height}, calc(100dvh - ${offset} * 2 - 4.25rem))`,
-      };
+    ? {
+        zIndex, left: 0, right: 0, width: '100%',
+        // the visual viewport: what the keyboard leaves of the screen
+        top: visual ? visual.top : 0,
+        height: visual ? visual.height : '100%',
+        paddingTop: 'env(safe-area-inset-top, 0px)', paddingBottom: bottomInset,
+        paddingLeft: 'env(safe-area-inset-left, 0px)', paddingRight: 'env(safe-area-inset-right, 0px)',
+      }
+    : layout
+      ? { zIndex, [side]: layout.x, bottom: layout.y, width: layout.width, height: layout.height }
+      : {
+          zIndex,
+          [side]: offset,
+          bottom: `calc(${offset} + 4.25rem + ${bottomInset})`,
+          width: `min(${width}, calc(100vw - 2 * ${offset}))`,
+          height: `min(${height}, calc(100dvh - ${offset} * 2 - 4.25rem - ${bottomInset}))`,
+        };
+  // the handles sit on the edges facing the page: left of a right-anchored panel
+  const inner = side === 'right' ? 'left' : 'right';
   const status = streaming ? l.answering : unread ? l.unread : null;
 
   return (
@@ -199,6 +400,7 @@ function ChatWidgetInner({
         tabIndex={-1}
         hidden={!open}
         data-chat-widget-panel=""
+        data-chat-root=""
         className={cn(
           // `hidden` alone loses to the `flex` utility's display, so the class follows `open` too
           'fixed flex-col overflow-hidden border-chat-rule bg-chat-page text-chat-fg shadow-2xl [outline:none]',
@@ -208,8 +410,39 @@ function ChatWidgetInner({
         )}
         style={panelStyle}
       >
-        <div className="flex shrink-0 items-center gap-1 border-b border-chat-rule px-3 py-2">
+        {adjustable && resizable && (
+          <>
+            {/* Pointer-only strips; the corner button below is the keyboard way. */}
+            <div aria-hidden className={cn('absolute inset-x-0 top-0 z-40 h-1.5 cursor-ns-resize touch-none')}
+              onPointerDown={(e) => startDrag(e, { top: true })} data-chat-widget-handle="top" />
+            <div aria-hidden className={cn('absolute inset-y-0 z-40 w-1.5 cursor-ew-resize touch-none', inner === 'left' ? 'left-0' : 'right-0')}
+              onPointerDown={(e) => startDrag(e, { inner: true })} data-chat-widget-handle="inner" />
+            <button type="button" aria-label={l.resize} title={l.resize}
+              className={cn('absolute top-0 z-50 h-4 w-4 touch-none focus-visible:[outline:none] focus-visible:ring-2 focus-visible:ring-chat-accent',
+                inner === 'left' ? 'left-0 cursor-nwse-resize' : 'right-0 cursor-nesw-resize')}
+              onPointerDown={(e) => startDrag(e, { top: true, inner: true })} onKeyDown={(e) => onHandleKey(e, 'resize')}
+              onDoubleClick={() => { setMaxRestore(undefined); commitLayout(null); }}
+              data-chat-widget-handle="corner" />
+          </>
+        )}
+        <div
+          className={cn('flex shrink-0 items-center gap-1 border-b border-chat-rule px-3 py-2', adjustable && movable && 'cursor-move touch-none select-none')}
+          // the header's own buttons and link keep their clicks
+          onPointerDown={adjustable && movable ? (e) => { if (!(e.target as Element).closest('button, a')) startDrag(e, { move: true }); } : undefined}
+          onDoubleClick={adjustable && movable ? (e) => { if (!(e.target as Element).closest('button, a')) { setMaxRestore(undefined); commitLayout(null); } } : undefined}
+          data-chat-widget-header=""
+        >
+          {adjustable && movable && (
+            <Button variant="ghost" size="sm" aria-label={l.move} title={l.move} className="cursor-move px-1.5" onKeyDown={(e) => onHandleKey(e, 'move')}>
+              <Move className="h-4 w-4" aria-hidden />
+            </Button>
+          )}
           <h2 id={titleId} className="min-w-0 flex-1 truncate text-sm font-semibold">{title ?? l.title}</h2>
+          {adjustable && resizable && (
+            <Button variant="ghost" size="sm" aria-label={maximized ? l.restore : l.maximize} title={maximized ? l.restore : l.maximize} onClick={toggleMaximize}>
+              {maximized ? <Minimize2 className="h-4 w-4" aria-hidden /> : <Maximize2 className="h-4 w-4" aria-hidden />}
+            </Button>
+          )}
           {fullPageHref && (
             <a href={fullPageHref} aria-label={l.openFullPage} title={l.openFullPage}
               className="rounded-[0.25rem] p-1.5 text-chat-muted hover:bg-chat-surface-2 hover:text-chat-fg focus-visible:[outline:none] focus-visible:ring-2 focus-visible:ring-chat-accent">
@@ -247,7 +480,7 @@ function ChatWidgetInner({
             'fixed flex h-14 w-14 items-center justify-center rounded-full bg-chat-user text-chat-on-accent shadow-xl hover:opacity-90 focus-visible:[outline:none] focus-visible:ring-2 focus-visible:ring-chat-accent focus-visible:ring-offset-2 focus-visible:ring-offset-chat-page',
             launcherClassName,
           )}
-          style={{ zIndex, [side]: offset, bottom: offset }}
+          style={{ zIndex, [side]: offset, bottom: `calc(${offset} + ${bottomInset})` }}
         >
           {open ? <X className="h-6 w-6" aria-hidden /> : <MessageCircle className="h-6 w-6" aria-hidden />}
           {!open && status && (

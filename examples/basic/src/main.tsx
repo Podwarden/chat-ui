@@ -106,6 +106,9 @@ createRoot(document.getElementById('root')!).render(
           locale={locale}
           defaultOpen
           fullPageHref="?"
+          // both off by default in the package; on here so the demo shows them
+          resizable
+          movable
         />
       </>
     ) : (

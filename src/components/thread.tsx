@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type PointerEvent, type TouchEvent, type WheelEvent } from 'react';
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type PointerEvent, type TouchEvent, type WheelEvent } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { ArrowDown } from 'lucide-react';
 import type { AttachmentOut } from '../adapters/types';
@@ -9,6 +9,16 @@ import { MessageItem, type MessageItemProps } from './message-item';
 import type { ChatUiLabels, Labels } from '../app/labels';
 import { useChatLabels } from '../app/labels-context';
 import { useSelectionActions } from './selection/context';
+import { clampTextScale } from '../model/prefs';
+
+/**
+ * Every row, the streaming tail and the empty placeholder are scaled by the
+ * container's `--chat-text-scale` through CSS `zoom`: unlike a transform it
+ * re-lays the text out at the new size, so lines re-wrap to the width instead
+ * of running off it, and the virtualised list measures the zoomed rows like
+ * any other height change (checked in Chromium and WebKit).
+ */
+const SCALED = '[zoom:var(--chat-text-scale,1)]';
 
 type Handlers = Pick<MessageItemProps, 'onRegenerate' | 'onForkHere' | 'onEdit' | 'onPick' | 'onRetry' | 'onOpenImage'>;
 
@@ -35,7 +45,7 @@ function ThreadFooter() {
   return (
     <div ref={c.bottomRef}>
       {c.tail && (
-        <div data-testid="stream-tail">
+        <div data-testid="stream-tail" className={SCALED}>
           <MessageItem message={c.tail} isLast isStreaming turnInFlight {...c.tailProps} />
         </div>
       )}
@@ -50,7 +60,7 @@ function ThreadEmpty() {
   // suppress it for the very first turn, whose tail is already streaming into
   // the footer.
   return c.tail ? null : (
-    <div className="flex h-full items-center justify-center p-8 text-sm text-chat-dim">{c.startConversation}</div>
+    <div className={`flex h-full items-center justify-center p-8 text-sm text-chat-dim ${SCALED}`}>{c.startConversation}</div>
   );
 }
 
@@ -73,6 +83,15 @@ export interface ThreadProps extends Handlers {
    * nearest `ChatLabelsProvider` says (English outside one).
    */
   labels?: Partial<Pick<Labels, 'startConversation' | 'jumpToLatest'>>;
+  /** The transcript's text scale, 1 = the package's own sizes (see `TEXT_SCALE_MIN`/`MAX`). */
+  textScale?: number;
+  /**
+   * Two fingers in the transcript change the text scale (re-wrapping it,
+   * which page zoom never does) instead of zooming the page; this is called
+   * once with the new scale when the fingers lift. Without it a pinch is the
+   * browser's own page zoom, as before.
+   */
+  onTextScaleChange?: (scale: number) => void;
 }
 
 /** What the reducer writes into `state.announcement` (see `model/message.ts`). */
@@ -206,8 +225,14 @@ export function Thread(p: ThreadProps) {
 
   const exitFollow = useCallback(() => setFollow(false), []);
   const onWheel = useCallback((e: WheelEvent) => { if (e.deltaY < 0) exitFollow(); }, [exitFollow]);
+  // One finger only: two are a pinch, and a pinch is not a decision to
+  // scroll away from the latest message. The start is re-seeded whenever
+  // the finger count changes, so the finger left on the glass after a pinch
+  // measures from where it is now, not from where the pinch began.
   const onTouchStart = useCallback((e: TouchEvent) => { touchStartYRef.current = e.touches[0]?.clientY ?? 0; }, []);
+  const onTouchEnd = useCallback((e: TouchEvent) => { if (e.touches.length) touchStartYRef.current = e.touches[0].clientY; }, []);
   const onTouchMove = useCallback((e: TouchEvent) => {
+    if (e.touches.length !== 1) return;
     const y = e.touches[0]?.clientY;
     // A finger dragged DOWN pulls earlier content into view — the touch
     // equivalent of `wheel` with `deltaY < 0`.
@@ -298,9 +323,96 @@ export function Thread(p: ThreadProps) {
     [tail, p.attachments, p.maxTokens, onForkHere, onPick, onOpenImage, p.reasoningOpen, onReasoningToggle, labels.startConversation],
   );
 
+  // ---- text scale ------------------------------------------------------------
+  // The variable is written to the DOM, not rendered: a pinch updates it every
+  // frame without re-rendering the transcript, and a render in between (a
+  // streamed token) must not snap it back to the committed value mid-gesture.
+  const containerRef = useRef<HTMLDivElement>(null);
+  const textScale = clampTextScale(p.textScale ?? 1);
+  const pinchingRef = useRef(false);
+  useLayoutEffect(() => {
+    if (!pinchingRef.current) containerRef.current?.style.setProperty('--chat-text-scale', String(textScale));
+  }, [textScale]);
+  const textScaleRef = useRef(textScale); textScaleRef.current = textScale;
+  const onTextScaleChangeRef = useRef(p.onTextScaleChange); onTextScaleChangeRef.current = p.onTextScaleChange;
+  const pinchOn = !!p.onTextScaleChange;
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || !pinchOn) return;
+    type Start = { dist: number; scale: number; midY: number; anchor: Element | null; ratio: number };
+    let start: Start | null = null;
+    let live = textScaleRef.current;
+    let frame = 0;
+    const distance = (t: globalThis.TouchList) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+    const scroller = () => el.querySelector<HTMLElement>('[data-testid="virtuoso-scroller"]');
+    const apply = () => {
+      frame = 0;
+      const s = start;
+      el.style.setProperty('--chat-text-scale', String(live));
+      // Keep the line under the fingers under the fingers. While following,
+      // the bottom is the anchor instead (`onTotalHeightChanged` re-pins).
+      if (!s?.anchor || followRef.current || !s.anchor.isConnected) return;
+      const r = s.anchor.getBoundingClientRect();
+      const sc = scroller();
+      if (sc) sc.scrollTop += r.top + s.ratio * r.height - s.midY;
+    };
+    const onStart = (e: globalThis.TouchEvent) => {
+      if (e.touches.length !== 2) return;
+      e.preventDefault();
+      const [a, b] = [e.touches[0], e.touches[1]];
+      const midX = (a.clientX + b.clientX) / 2;
+      const midY = (a.clientY + b.clientY) / 2;
+      const anchor = document.elementFromPoint?.(midX, midY)?.closest('[data-index], [data-testid="stream-tail"]') ?? null;
+      const r = anchor?.getBoundingClientRect();
+      pinchingRef.current = true;
+      live = textScaleRef.current;
+      start = { dist: distance(e.touches) || 1, scale: live, midY, anchor, ratio: r && r.height ? (midY - r.top) / r.height : 0 };
+    };
+    const onMove = (e: globalThis.TouchEvent) => {
+      if (!start || e.touches.length !== 2) return;
+      e.preventDefault();
+      live = clampTextScale(start.scale * (distance(e.touches) / start.dist));
+      if (!frame) frame = requestAnimationFrame(apply);
+    };
+    const onEnd = (e: globalThis.TouchEvent) => {
+      if (!start || e.touches.length >= 2) return;
+      start = null;
+      if (frame) { cancelAnimationFrame(frame); apply(); }
+      pinchingRef.current = false;
+      if (live !== textScaleRef.current) onTextScaleChangeRef.current?.(live);
+      // Back to the committed value a frame later — by then a host that took
+      // the new scale has re-rendered with it (touchend is a discrete event,
+      // rendered synchronously), and a controlled host that did not is not
+      // left showing a scale it never agreed to.
+      requestAnimationFrame(() => {
+        if (!pinchingRef.current) el.style.setProperty('--chat-text-scale', String(textScaleRef.current));
+      });
+    };
+    // Safari's own pinch-zoom arrives as gesture events beside the touches.
+    const onGesture = (e: Event) => e.preventDefault();
+    const opts = { passive: false } as const;
+    el.addEventListener('touchstart', onStart, opts);
+    el.addEventListener('touchmove', onMove, opts);
+    el.addEventListener('touchend', onEnd);
+    el.addEventListener('touchcancel', onEnd);
+    el.addEventListener('gesturestart', onGesture, opts);
+    el.addEventListener('gesturechange', onGesture, opts);
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      pinchingRef.current = false;
+      el.removeEventListener('touchstart', onStart);
+      el.removeEventListener('touchmove', onMove);
+      el.removeEventListener('touchend', onEnd);
+      el.removeEventListener('touchcancel', onEnd);
+      el.removeEventListener('gesturestart', onGesture);
+      el.removeEventListener('gesturechange', onGesture);
+    };
+  }, [pinchOn]);
+
   return (
     <SlotCtx.Provider value={slot}>
     <div
+      ref={containerRef}
       className="relative h-full"
       data-testid="thread-drop-zone"
       // a `drop` handler alone never fires — the default dragover action is
@@ -315,6 +427,7 @@ export function Thread(p: ThreadProps) {
       onPointerDown={onPointerDown}
       onTouchStart={onTouchStart}
       onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
       onKeyDown={onKeyDown}
     >
       <Virtuoso
@@ -326,6 +439,7 @@ export function Thread(p: ThreadProps) {
         atBottomStateChange={onAtBottomStateChange}
         computeItemKey={(_, m) => m.id}
         itemContent={(i, m) => (
+          <div className={SCALED}>
           <MessageItem
             message={m}
             attachments={p.attachments}
@@ -341,6 +455,7 @@ export function Thread(p: ThreadProps) {
             reasoningOpen={p.reasoningOpen}
             onReasoningToggle={onReasoningToggle}
           />
+          </div>
         )}
         components={VIRTUOSO_COMPONENTS}
       />

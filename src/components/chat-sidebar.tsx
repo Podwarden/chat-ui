@@ -314,9 +314,11 @@ export function ChatSidebar(p: ChatSidebarProps) {
                         action, and hiding the only action behind hover leaves a
                         colleague's chat with no affordance at all on a touch
                         screen. On your own rows it is still the rare one of
-                        three, so it stays hover/focus-revealed. */}
+                        three, so it stays hover/focus-revealed — except on a
+                        screen with no hover at all, where "hover-revealed"
+                        means never shown. */}
                     <button type="button" tabIndex={-1} aria-label={l.forkChat(c.title)} onClick={(e) => { e.stopPropagation(); p.onFork(c.id); }}
-                      className={`shrink-0 rounded-[0.25rem] p-0.5 text-chat-dim hover:text-chat-accent ${mine ? 'hidden group-hover:block group-focus-within:block' : ''}`}><GitFork className="h-3.5 w-3.5" aria-hidden /></button>
+                      className={`shrink-0 rounded-[0.25rem] p-0.5 text-chat-dim hover:text-chat-accent ${mine ? 'hidden group-hover:block group-focus-within:block [@media(hover:none)]:block' : ''}`}><GitFork className="h-3.5 w-3.5" aria-hidden /></button>
                     {mine && <>
                       <button type="button" tabIndex={-1} aria-label={l.renameChat(c.title)} onClick={(e) => { e.stopPropagation(); setRenaming({ id: c.id, value: c.title }); }}
                         className="shrink-0 rounded-[0.25rem] p-0.5 text-chat-dim hover:text-chat-accent"><Pencil className="h-3.5 w-3.5" aria-hidden /></button>

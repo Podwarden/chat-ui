@@ -1,11 +1,11 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { X } from 'lucide-react';
+import { AArrowDown, AArrowUp, X } from 'lucide-react';
 import { Button } from '@/ui/button';
 import type { ChatSettings, ChatSummary, ModelInfo, ToolPolicy } from '../adapters/types';
 import type { Capabilities } from '../adapters/capabilities';
 import { resolveActiveModel } from '../model/resolve-model';
-import { SELECTION_DELAY_MAX_MS, SELECTION_DELAY_MIN_MS, type SelectionPrefs } from '../model/prefs';
+import { SELECTION_DELAY_MAX_MS, SELECTION_DELAY_MIN_MS, TEXT_SCALE_MAX, TEXT_SCALE_MIN, TEXT_SCALE_STEP, clampTextScale, type SelectionPrefs } from '../model/prefs';
 import { useChatLabels } from '../app/labels-context';
 export interface SettingsPanelProps {
   open: boolean; onClose: () => void; chat: ChatSummary; models: ModelInfo[]; capabilities: Capabilities;
@@ -24,6 +24,29 @@ export interface SettingsPanelProps {
    * the transcript nothing.
    */
   overlay?: boolean;
+  /** With `onTextScaleChange`, the panel shows its "Text size" row. */
+  textScale?: number;
+  onTextScaleChange?: (scale: number) => void;
+}
+
+/** "Text size": smaller, the current percentage (which resets), larger. */
+function TextSizeRow({ scale, onChange }: { scale: number; onChange: (scale: number) => void }) {
+  const { labels: { settings: l }, format } = useChatLabels();
+  const pct = Math.round(scale * 100);
+  const step = (dir: 1 | -1) => onChange(clampTextScale(Math.round((scale + dir * TEXT_SCALE_STEP) * 10) / 10));
+  return (
+    <div className="text-xs text-chat-muted" role="group" aria-label={l.textSize}>
+      <span className="mb-1 block">{l.textSize}</span>
+      <div className="flex items-center gap-1">
+        <Button variant="outline" size="sm" aria-label={l.textSmaller} disabled={scale <= TEXT_SCALE_MIN} onClick={() => step(-1)}><AArrowDown className="h-4 w-4" aria-hidden /></Button>
+        <Button variant="ghost" size="sm" className="min-w-[4rem] font-mono" aria-label={l.textSizeReset} title={l.textSizeReset} disabled={scale === 1} onClick={() => onChange(1)}>
+          <span aria-live="polite">{l.textSizeValue(pct, format.number(pct))}</span>
+        </Button>
+        <Button variant="outline" size="sm" aria-label={l.textLarger} disabled={scale >= TEXT_SCALE_MAX} onClick={() => step(1)}><AArrowUp className="h-4 w-4" aria-hidden /></Button>
+      </div>
+      <p className="mt-1 text-[11px] text-chat-dim">{l.textSizeHint}</p>
+    </div>
+  );
 }
 
 /** "Text selection": the menu's on/off switch, then its delay and what Explain does. */
@@ -223,6 +246,7 @@ export function SettingsPanel(p: SettingsPanelProps) {
           <p className="mt-1 text-[11px] text-chat-dim">{l.toolPolicyNote}</p>
         </fieldset>
       )}
+      {p.onTextScaleChange && <TextSizeRow scale={p.textScale ?? 1} onChange={p.onTextScaleChange} />}
       {p.selectionPrefs && p.onSelectionPrefsChange && <SelectionSection prefs={p.selectionPrefs} onChange={p.onSelectionPrefsChange} />}
       <div className="mt-auto">
         <Button variant="outline" size="sm" className="w-full" onClick={p.onSaveDefaults}>{l.saveDefaults}</Button>

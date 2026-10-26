@@ -16,7 +16,7 @@ export { ChatApp } from './app/chat-app';
 export type { ChatAppProps, SelectionActionsOptions } from './app/chat-app';
 // The same chat as a launcher button and pop-up panel, for every page of a host.
 export { ChatWidget } from './app/chat-widget';
-export type { ChatWidgetProps } from './app/chat-widget';
+export type { ChatWidgetProps, WidgetLayout } from './app/chat-widget';
 // Every visible string (`labels`) and the locale numbers, dates and language
 // names follow (`locale`). The provider and hook are for hosts that assemble
 // their own layout from the components below.

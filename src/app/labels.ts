@@ -330,6 +330,15 @@ export interface ChatUiLabels extends Labels {
     explainPrefill: string;
     quoteAsChips: string;
     selectionHint: string;
+    /** The "Text size" row (the transcript's scale; pinching the transcript sets it too). */
+    textSize: string;
+    textSmaller: string;
+    textLarger: string;
+    /** The reset button; gets nothing, its value is always 100%. */
+    textSizeReset: string;
+    /** The current scale; gets the percentage, raw and formatted for `locale`. */
+    textSizeValue: CountLabel;
+    textSizeHint: string;
   };
   lightbox: {
     title: string;
@@ -397,6 +406,12 @@ export interface ChatUiLabels extends Labels {
     unread: string;
     /** The compact layout's header button that opens the chat list. */
     showChats: string;
+    /** The resize handle (`resizable`); arrow keys resize, double-click resets. */
+    resize: string;
+    /** The move handle (`movable`); arrow keys move. */
+    move: string;
+    maximize: string;
+    restore: string;
   };
 }
 
@@ -629,6 +644,12 @@ export const DEFAULT_LABELS: ChatUiLabels = {
     explainPrefill: 'Put in the message box',
     quoteAsChips: 'Collect quotes as chips',
     selectionHint: 'Saved in this browser. With text selected, press Alt+Enter (Option+Return on a Mac) for the menu.',
+    textSize: 'Text size',
+    textSmaller: 'Smaller text',
+    textLarger: 'Larger text',
+    textSizeReset: 'Reset text size',
+    textSizeValue: (_n, pct) => `${pct}%`,
+    textSizeHint: 'Saved in this browser. On a touch screen, pinch the conversation to change it.',
   },
   lightbox: {
     title: 'Image preview',
@@ -664,6 +685,10 @@ export const DEFAULT_LABELS: ChatUiLabels = {
     answering: 'Answering…',
     unread: 'New reply',
     showChats: 'Show chats',
+    resize: 'Resize chat',
+    move: 'Move chat',
+    maximize: 'Maximize chat',
+    restore: 'Restore chat size',
   },
 };
 

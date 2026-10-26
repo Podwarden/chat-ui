@@ -34,3 +34,20 @@
   --chat-positive: 52 211 153;
   --chat-code: 2 6 23;
 }
+
+/*
+ * Touch screens: every field the chat renders is at least 16px. iOS Safari
+ * zooms the whole page in when a field under 16px takes focus, and leaves it
+ * zoomed after the keyboard closes — the most common "the chat is broken on
+ * my phone" report. `[data-chat-root]` is <ChatApp>'s root and <ChatWidget>'s
+ * panel; the element-and-attribute selector outranks a utility class like
+ * `text-sm`, whatever the import order. `max(…, 1em)` never shrinks a field
+ * that is already larger.
+ */
+@media (pointer: coarse) {
+  [data-chat-root] textarea,
+  [data-chat-root] input,
+  [data-chat-root] select {
+    font-size: max(16px, 1em);
+  }
+}

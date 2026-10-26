@@ -165,7 +165,9 @@ into your own app with no attribution obligations.
   bottom-corner launcher in a pop-up panel, the way support chats work, with
   its dialogs kept inside the panel and a full-screen panel on a phone. In any
   box narrower than 640 px `<ChatApp>` goes compact by itself: the chat list
-  becomes a drawer and settings an overlay.
+  becomes a drawer and settings an overlay. The panel can be made resizable
+  and movable, and on a phone pinching the conversation resizes its text and
+  re-wraps it, instead of zooming the page.
 
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/widget-dark.png">

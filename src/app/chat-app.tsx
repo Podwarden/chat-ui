@@ -37,7 +37,7 @@ import { DEFAULT_CAPABILITIES, type Capabilities, type ScopeOption } from '../ad
 import { AdaptersProvider, useAdapters } from '../adapters/context';
 import { ChatThemeProvider, type ChatTheme } from '../theme/context';
 import { ApiError, type Adapters, type AttachmentOut, type ChatSettings, type ModelInfo } from '../adapters/types';
-import { DEFAULT_SELECTION_PREFS, readReasoningOpen, readSelectionPrefs, writeReasoningOpen, writeSelectionPrefs, type SelectionPrefs } from '../model/prefs';
+import { DEFAULT_SELECTION_PREFS, clampTextScale, readReasoningOpen, readSelectionPrefs, readTextScale, writeReasoningOpen, writeSelectionPrefs, writeTextScale, type SelectionPrefs } from '../model/prefs';
 import { MAX_QUOTES, appendQuoteToDraft, serializeQuotes, type QuickAction, type Quote } from '../model/selection';
 import { SelectionActions, SelectionDock } from '../components/selection/selection-actions';
 import type { SelectionLabels } from '../components/selection/context';
@@ -202,6 +202,22 @@ export interface ChatAppProps {
    */
   suspended?: boolean;
   /**
+   * The transcript's text scale (1 = the package's sizes; 0.8–2). Controlled
+   * when set; `onTextScaleChange` reports the user's changes either way.
+   * Uncontrolled, it starts at what this browser last stored, else
+   * `defaultTextScale`, and is stored when the user changes it.
+   */
+  textScale?: number;
+  /** The uncontrolled starting scale when this browser has stored none (default 1). */
+  defaultTextScale?: number;
+  onTextScaleChange?: (scale: number) => void;
+  /**
+   * Two fingers in the transcript resize its text, re-wrapped to the width
+   * (default `true`). `false` leaves a pinch to the browser's page zoom; the
+   * Settings control stays.
+   */
+  pinchToZoomText?: boolean;
+  /**
    * Query parameter the open chat's id is WRITTEN to, via
    * `history.replaceState` (no navigation, no re-render, no scroll reset), so
    * the address bar and any bookmark taken from it name the chat on screen.
@@ -279,6 +295,10 @@ function ChatAppInner({
   defaultSidebarCollapsed = false,
   onSidebarCollapsedChange,
   onStreamingChange,
+  textScale: textScaleProp,
+  defaultTextScale = 1,
+  onTextScaleChange,
+  pinchToZoomText = true,
   syncUrlParam = 'c',
   className,
   rootInertId,
@@ -322,6 +342,17 @@ function ChatAppInner({
   // also renders on the server, where `localStorage` does not exist, and a
   // stored `false` would then be a hydration mismatch. The effect below reads
   // the real answer on the client's first commit.
+  // Read after mount for the same SSR reason as `reasoningOpen` below.
+  const [storedTextScale, setStoredTextScale] = useState<number | null>(null);
+  useEffect(() => { setStoredTextScale(readTextScale()); }, []);
+  const textScale = clampTextScale(textScaleProp ?? storedTextScale ?? defaultTextScale);
+  const onTextScaleChangeRef = useRef(onTextScaleChange); onTextScaleChangeRef.current = onTextScaleChange;
+  const textScaleControlled = textScaleProp !== undefined;
+  const changeTextScale = useCallback((s: number) => {
+    const next = clampTextScale(s);
+    if (!textScaleControlled) { setStoredTextScale(next); writeTextScale(next); }
+    onTextScaleChangeRef.current?.(next);
+  }, [textScaleControlled]);
   const [reasoningOpen, setReasoningOpen] = useState(true);
   useEffect(() => { setReasoningOpen(readReasoningOpen()); }, []);
   const onReasoningToggle = useCallback((open: boolean) => {
@@ -801,7 +832,7 @@ function ChatAppInner({
     // one too; both must resolve against this root, not the page. The host's
     // `className` comes last so it can override anything but that.
     <div ref={rootRef} className={cn('relative flex overflow-hidden', className)} onPaste={onPasteAnywhere} onKeyDown={onRootKeyDown}
-      data-chat-layout={compact ? 'compact' : 'full'}>
+      data-chat-layout={compact ? 'compact' : 'full'} data-chat-root="">
       {!compact && (
         <ChatSidebar {...sidebarProps} collapsed={railCollapsed} onToggle={toggleRail}
           onSelect={setSelectedId} onNew={() => void newChat()} />
@@ -859,6 +890,7 @@ function ChatAppInner({
             maxTokens={maxTokens} onRegenerate={onRegenerate} onForkHere={onForkHere} onEdit={onEdit}
             onPick={onPick} onRetry={onRetry} onOpenImage={setLightbox} onDropFiles={onDropFiles}
             reasoningOpen={reasoningOpen} onReasoningToggle={onReasoningToggle}
+            textScale={textScale} onTextScaleChange={pinchToZoomText ? changeTextScale : undefined}
           />
         </div>
         <div className="space-y-2 border-t border-chat-rule p-3">
@@ -894,6 +926,7 @@ function ChatAppInner({
           selectionPrefs={selectionOn ? selectionPrefs : undefined}
           onSelectionPrefsChange={selectionOn ? onSelectionPrefsChange : undefined}
           overlay={compact}
+          textScale={textScale} onTextScaleChange={changeTextScale}
         />
       )}
       {forkReq && (

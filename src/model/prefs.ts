@@ -97,3 +97,40 @@ export function writeSelectionPrefs(patch: Partial<SelectionPrefs>): void {
     // applies for this session only
   }
 }
+
+export const TEXT_SCALE_KEY = 'chat2:textScale';
+
+/** The bounds and step of the transcript's text scale (1 = the package's own sizes). */
+export const TEXT_SCALE_MIN = 0.8;
+export const TEXT_SCALE_MAX = 2;
+export const TEXT_SCALE_STEP = 0.1;
+
+/** `n` inside the bounds and on a 1% grid, so a pinch never stores 1.3172. */
+export function clampTextScale(n: number): number {
+  if (!Number.isFinite(n)) return 1;
+  return Math.round(Math.min(TEXT_SCALE_MAX, Math.max(TEXT_SCALE_MIN, n)) * 100) / 100;
+}
+
+/**
+ * The transcript's text scale (pinch in the transcript, Settings → Text size).
+ * Per browser: it is about the reader's eyes and screen, not the chat.
+ * `null` when the user has never set one, so the host's default applies.
+ */
+export function readTextScale(): number | null {
+  try {
+    const raw = localStorage.getItem(TEXT_SCALE_KEY);
+    if (raw === null) return null;
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? clampTextScale(n) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeTextScale(scale: number): void {
+  try {
+    localStorage.setItem(TEXT_SCALE_KEY, String(clampTextScale(scale)));
+  } catch {
+    // applies for this session only
+  }
+}
