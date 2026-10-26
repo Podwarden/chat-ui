@@ -31,6 +31,7 @@ import { ExternalLink, Maximize2, MessageCircle, Minimize2, Move, X } from 'luci
 import { Button } from '@/ui/button';
 import { cn } from '@/ui/cn';
 import { ChatApp, type ChatAppProps } from './chat-app';
+import { useVisualViewport } from '../hooks/use-visual-viewport';
 import { ChatLabelsProvider, useChatLabels } from './labels-context';
 
 export interface ChatWidgetProps extends Omit<ChatAppProps, 'layout' | 'portalContainer' | 'className' | 'suspended'> {
@@ -116,20 +117,6 @@ function useViewportSize(): { vw: number; vh: number } {
   return size;
 }
 
-/** The visual viewport's height and top (the part the on-screen keyboard leaves), while `on`. */
-function useVisualViewport(on: boolean): { height: number; top: number } | null {
-  const [vv, setVv] = useState<{ height: number; top: number } | null>(null);
-  useEffect(() => {
-    const v = typeof window !== 'undefined' ? window.visualViewport : null;
-    if (!on || !v) { setVv(null); return; }
-    const update = () => setVv({ height: v.height, top: v.offsetTop });
-    update();
-    v.addEventListener('resize', update);
-    v.addEventListener('scroll', update);
-    return () => { v.removeEventListener('resize', update); v.removeEventListener('scroll', update); };
-  }, [on]);
-  return vv;
-}
 
 /** Whether `query` matches, kept current; `false` on the server and before mount. */
 function useMediaQuery(query: string | null): boolean {

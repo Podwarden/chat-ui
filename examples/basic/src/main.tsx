@@ -120,7 +120,9 @@ createRoot(document.getElementById('root')!).render(
         syncUrlParam={null}
         labels={labels}
         locale={locale}
-        className="h-screen"
+        // the chat IS this page: header and composer stay on screen on a
+        // phone, through the browser toolbar and the keyboard
+        fitViewport
       />
     )}
   </StrictMode>,

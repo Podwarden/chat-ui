@@ -4,6 +4,30 @@ All notable changes to `@podwarden/chat-ui`. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are semver,
 and each release is cut as a `vX.Y.Z` git tag.
 
+## [0.1.31] - 2026-10-26
+
+### Added
+
+- **`<ChatApp fitViewport>`** for a chat that is the whole page: the root is
+  pinned to the visual viewport (`fixed`, as tall as what the browser's
+  toolbars and the on-screen keyboard leave, padded out of the notch and the
+  home indicator). The header and the composer never leave the screen; only
+  the transcript scrolls, so the user can type while reading an old message.
+  The demo's full-page view uses it.
+
+### Fixed
+
+- **On a phone the composer could end up below the screen, and the header
+  above it, after a long reply.** A full-page chat sized `h-screen`
+  (`100vh`) is taller than the screen whenever mobile Safari's toolbar or
+  keyboard is up, so the page itself scrolled. `fitViewport` is the fix for
+  full-page hosts; the transcript also no longer hands a swipe that reaches
+  its end on to the page (`overscroll-behavior: contain`).
+- **Selecting text right after a chat loaded could lose the selection.** The
+  message box focused itself when it became enabled and collapsed the
+  passage being selected; it no longer takes focus while text is selected
+  elsewhere on the page.
+
 ## [0.1.30] - 2026-10-26
 
 ### Docs

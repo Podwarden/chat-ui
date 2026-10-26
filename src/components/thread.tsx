@@ -432,7 +432,10 @@ export function Thread(p: ThreadProps) {
     >
       <Virtuoso
         ref={ref}
-        style={{ height: '100%' }}
+        // contain: reaching the top or bottom of the transcript must not hand
+        // the swipe on to the page — on a phone that scrolled the header and
+        // the composer off the screen
+        style={{ height: '100%', overscrollBehavior: 'contain' }}
         data={msgs}
         followOutput="auto"
         totalListHeightChanged={onTotalHeightChanged}

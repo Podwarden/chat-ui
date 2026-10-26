@@ -68,6 +68,16 @@ export interface ComposerProps {
 
 const MAX_ROWS_PX = 8 * 24;
 
+/**
+ * Text is selected somewhere outside `ta` — focusing a field would collapse
+ * that selection, and with it the selection menu the user is reaching for.
+ */
+function selectionIsElsewhere(ta: HTMLTextAreaElement): boolean {
+  const sel = document.getSelection?.();
+  if (!sel || sel.isCollapsed || sel.rangeCount === 0) return false;
+  return !ta.contains(sel.getRangeAt(0).commonAncestorContainer);
+}
+
 /** Focus sits in an editable field that is not `ta` — a place never to steal from. */
 function focusIsElsewhereEditable(ta: HTMLTextAreaElement): boolean {
   const a = document.activeElement;
@@ -117,10 +127,12 @@ export function Composer(p: ComposerProps) {
 
   // Take focus on mount, on chat switch and when the field re-enables — the
   // message box is where typing belongs, and nothing else ever hands focus
-  // back. Never steals from another editable field the user is typing in.
+  // back. Never steals from another editable field the user is typing in,
+  // nor from a text selection: the field enabling a moment after the chat
+  // loads used to wipe a passage the user had just started selecting.
   useEffect(() => {
     const ta = taRef.current;
-    if (!ta || ta.disabled || focusIsElsewhereEditable(ta)) return;
+    if (!ta || ta.disabled || focusIsElsewhereEditable(ta) || selectionIsElsewhere(ta)) return;
     ta.focus();
   }, [p.focusKey, taDisabled]);
 

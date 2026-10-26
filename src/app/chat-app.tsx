@@ -46,6 +46,7 @@ import { useChats } from '../hooks/use-chats';
 import { useChatThread } from '../hooks/use-chat-thread';
 import { useAttachments } from '../hooks/use-attachments';
 import { useContextMeter } from '../hooks/use-context-meter';
+import { useVisualViewport } from '../hooks/use-visual-viewport';
 import { ChatSidebar } from '../components/chat-sidebar';
 import { Thread } from '../components/thread';
 import { Composer } from '../components/composer';
@@ -218,6 +219,17 @@ export interface ChatAppProps {
    */
   pinchToZoomText?: boolean;
   /**
+   * For a chat that IS the page (a full-screen route, a phone): pin the root
+   * to the visual viewport — `fixed`, as tall as what the browser's toolbars
+   * and the on-screen keyboard leave, padded out of the notch and the home
+   * indicator. The header and the composer then never leave the screen; only
+   * the transcript scrolls, so the user can type while reading an old
+   * message. `100vh`/`h-screen` cannot do this on mobile Safari, which sizes
+   * neither for the toolbar nor the keyboard. Overrides the geometry in
+   * `className` (default `false`).
+   */
+  fitViewport?: boolean;
+  /**
    * Query parameter the open chat's id is WRITTEN to, via
    * `history.replaceState` (no navigation, no re-render, no scroll reset), so
    * the address bar and any bookmark taken from it name the chat on screen.
@@ -299,6 +311,7 @@ function ChatAppInner({
   defaultTextScale = 1,
   onTextScaleChange,
   pinchToZoomText = true,
+  fitViewport = false,
   syncUrlParam = 'c',
   className,
   rootInertId,
@@ -320,6 +333,17 @@ function ChatAppInner({
     onSidebarCollapsedChange?.(next);
   };
   const rootRef = useRef<HTMLDivElement>(null);
+  const visual = useVisualViewport(fitViewport);
+  const rootStyle: React.CSSProperties | undefined = fitViewport
+    ? {
+        position: 'fixed', left: 0, right: 0,
+        top: visual ? visual.top : 0,
+        // before the first measurement (and on the server): the small viewport
+        height: visual ? visual.height : '100svh',
+        paddingTop: 'env(safe-area-inset-top, 0px)', paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+        paddingLeft: 'env(safe-area-inset-left, 0px)', paddingRight: 'env(safe-area-inset-right, 0px)',
+      }
+    : undefined;
   const width = useElementWidth(rootRef, layout === 'auto');
   const compact = layout === 'widget' || (layout === 'auto' && width !== null && width < COMPACT_BELOW_PX);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -831,7 +855,7 @@ function ChatAppInner({
     // overlay below `md` (and always in the compact layout), and the drawer is
     // one too; both must resolve against this root, not the page. The host's
     // `className` comes last so it can override anything but that.
-    <div ref={rootRef} className={cn('relative flex overflow-hidden', className)} onPaste={onPasteAnywhere} onKeyDown={onRootKeyDown}
+    <div ref={rootRef} className={cn('relative flex overflow-hidden', className)} style={rootStyle} onPaste={onPasteAnywhere} onKeyDown={onRootKeyDown}
       data-chat-layout={compact ? 'compact' : 'full'} data-chat-root="">
       {!compact && (
         <ChatSidebar {...sidebarProps} collapsed={railCollapsed} onToggle={toggleRail}
