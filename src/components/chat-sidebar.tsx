@@ -7,6 +7,7 @@ import { Modal } from '@/ui/modal';
 import type { Capabilities, ScopeOption } from '../adapters/capabilities';
 import type { ChatSummary } from '../adapters/types';
 import { DEFAULT_LABELS, type Labels } from '../app/labels';
+import { useChatLabels } from '../app/labels-context';
 
 export interface ChatSidebarProps {
   chats: ChatSummary[]; selectedId: string | null; collapsed: boolean; onToggle: () => void;
@@ -45,21 +46,40 @@ export interface ChatSidebarProps {
   /** Which option the next new chat is bound to. */
   selectedScopeId?: string | null;
   onScopeChange?: (id: string) => void;
-  /** Overrides for the three strings this component owns; English otherwise. */
+  /**
+   * Overrides for three of its strings, over whatever the nearest
+   * `ChatLabelsProvider` says (English outside one); the rest come from the
+   * provider's `sidebar` group.
+   */
   labels?: Partial<Pick<Labels, 'newChat' | 'filter' | 'deleteAll'>>;
   /** Forwarded to the confirm dialogs' `Modal` (which root goes `inert`). */
   rootInertId?: string;
 }
 
-function groupOf(iso: string, now: number): 'Today' | 'Yesterday' | 'Last 7 days' | 'Older' {
+type DateGroup = 'today' | 'yesterday' | 'last7Days' | 'older';
+/** Calendar-day buckets in the viewer's own time zone; the headings come from `labels.sidebar`. */
+function groupOf(iso: string, now: number): DateGroup {
   const d = new Date(iso); const start = new Date(now); start.setHours(0, 0, 0, 0);
   const days = Math.floor((start.getTime() - new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()) / 864e5);
-  return days <= 0 ? 'Today' : days === 1 ? 'Yesterday' : days < 7 ? 'Last 7 days' : 'Older';
+  return days <= 0 ? 'today' : days === 1 ? 'yesterday' : days < 7 ? 'last7Days' : 'older';
 }
-const GROUPS = ['Today', 'Yesterday', 'Last 7 days', 'Older'] as const;
+const GROUPS: readonly DateGroup[] = ['today', 'yesterday', 'last7Days', 'older'];
+
+/** `text` with every occurrence of `word` in bold (the delete-all confirmation word). */
+function emphasise(text: string, word: string): React.ReactNode {
+  if (!word || !text.includes(word)) return text;
+  const parts = text.split(word);
+  return parts.flatMap((part, i) => (i === 0 ? [part] : [<strong key={i}>{word}</strong>, part])).filter((n) => n !== '');
+}
 
 export function ChatSidebar(p: ChatSidebarProps) {
-  const labels = { ...DEFAULT_LABELS, ...p.labels };
+  const { labels: context, format } = useChatLabels();
+  const labels = { ...context, ...p.labels };
+  const l = context.sidebar;
+  // The word that arms "Delete everything". A catalog that returns '' for an
+  // untranslated key would otherwise make the guard match an empty field, so
+  // a blank word falls back to the default one.
+  const deleteAllWord = l.deleteAllWord.trim() || DEFAULT_LABELS.sidebar.deleteAllWord;
   const [filter, setFilter] = useState('');
   const [focusIdx, setFocusIdx] = useState(0);
   const [renaming, setRenaming] = useState<{ id: string; value: string } | null>(null);
@@ -108,17 +128,17 @@ export function ChatSidebar(p: ChatSidebarProps) {
         const g = groupOf(c.last_message_at ?? c.created_at, now);
         mine.set(g, [...(mine.get(g) ?? []), c]);
       } else {
-        const g = c.owner?.name ?? 'Shared';
+        const g = c.owner?.name ?? l.sharedOwner;
         others.set(g, [...(others.get(g) ?? []), c]);
       }
     }
     return [
       // date groups keep their fixed order; owner groups follow in the order
       // the server's sort first mentions them
-      ...GROUPS.filter((g) => mine.has(g)).map((g) => ({ key: `date:${g}`, label: g, rows: mine.get(g)! })),
+      ...GROUPS.filter((g) => mine.has(g)).map((g) => ({ key: `date:${g}`, label: l[g], rows: mine.get(g)! })),
       ...[...others].map(([name, rows]) => ({ key: `owner:${name}`, label: name, rows })),
     ];
-  }, [visible, isMine]);
+  }, [visible, isMine, l]);
   const flat = useMemo(() => sections.flatMap((s) => s.rows), [sections]);
   // "Delete all" is `DELETE /chats`, which the backend scopes to the caller —
   // a colleague's shared rows are neither counted nor deleted. Counting
@@ -191,26 +211,26 @@ export function ChatSidebar(p: ChatSidebarProps) {
   const newChatTitle = !p.canCreate
     ? p.createDisabledReason
     : scopes && selectedScopeLabel
-      ? `${labels.newChat} · ${scopes.label}: ${selectedScopeLabel}`
+      ? l.newChatInScope(labels.newChat, scopes.label, selectedScopeLabel)
       : undefined;
 
   if (p.collapsed) {
     return (
       <div className="flex flex-col items-center gap-2 border-r border-chat-rule p-2">
-        <Button variant="ghost" size="sm" aria-label="Expand chat list" onClick={p.onToggle}><PanelLeftOpen className="h-4 w-4" aria-hidden /></Button>
+        <Button variant="ghost" size="sm" aria-label={l.expand} onClick={p.onToggle}><PanelLeftOpen className="h-4 w-4" aria-hidden /></Button>
         <Button size="sm" aria-label={labels.newChat} title={newChatTitle} disabled={!p.canCreate} onClick={p.onNew}><Plus className="h-4 w-4" aria-hidden /></Button>
       </div>
     );
   }
 
   return (
-    <aside className="flex h-full w-64 flex-col border-r border-chat-rule bg-chat-page/50" aria-label="Chats">
+    <aside className="flex h-full w-64 flex-col border-r border-chat-rule bg-chat-page/50" aria-label={l.region}>
       {/* Above the create button, not beside it: it states what the NEXT new
           chat will be bound to, so it has to be read before that click. */}
       {scopePicker}
       <div className={`flex items-center gap-1 p-2${scopePicker ? ' pt-0' : ''}`}>
         <Button size="sm" className="flex-1" title={p.canCreate ? undefined : p.createDisabledReason} disabled={!p.canCreate} onClick={p.onNew}><Plus className="mr-1 h-4 w-4" aria-hidden /> {labels.newChat}</Button>
-        <Button variant="ghost" size="sm" aria-label="Collapse chat list" onClick={p.onToggle}><PanelLeftClose className="h-4 w-4" aria-hidden /></Button>
+        <Button variant="ghost" size="sm" aria-label={l.collapse} onClick={p.onToggle}><PanelLeftClose className="h-4 w-4" aria-hidden /></Button>
       </div>
       <label className="relative mx-2 mb-1">
         <Search className="pointer-events-none absolute left-2 top-2 h-3.5 w-3.5 text-chat-dim" aria-hidden />
@@ -220,7 +240,7 @@ export function ChatSidebar(p: ChatSidebarProps) {
         <input type="search" role="searchbox" aria-label={labels.filter} value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={labels.filter}
           className="w-full rounded-[0.25rem] border border-chat-rule bg-chat-page py-1 pl-7 pr-2 text-xs text-chat-fg focus:[outline:none] focus:ring-1 focus:ring-chat-accent" />
       </label>
-      <ul ref={listRef} role="listbox" aria-label="Chat list" aria-activedescendant={flat[focusIdx] ? `chat-opt-${flat[focusIdx].id}` : undefined} onKeyDown={onKeyDown} className="flex-1 overflow-y-auto px-1">
+      <ul ref={listRef} role="listbox" aria-label={l.list} aria-activedescendant={flat[focusIdx] ? `chat-opt-${flat[focusIdx].id}` : undefined} onKeyDown={onKeyDown} className="flex-1 overflow-y-auto px-1">
         {sections.map((s) => (
           <li key={s.key} role="presentation">
             <div className="px-2 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-wider text-chat-dim">{s.label}</div>
@@ -235,9 +255,12 @@ export function ChatSidebar(p: ChatSidebarProps) {
                     onFocus={() => setFocusIdx(i)} onClick={() => p.onSelect(c.id)} onDoubleClick={() => { if (mine) setRenaming({ id: c.id, value: c.title }); }}
                     className={`group flex cursor-pointer items-center gap-1 rounded-[0.25rem] px-2 py-1.5 text-sm [outline:none] focus-visible:ring-1 focus-visible:ring-chat-accent ${selected ? 'bg-chat-surface-2 text-chat-accent-strong' : 'text-chat-muted hover:bg-chat-surface-2'}`}>
                     {renaming?.id === c.id ? (
-                      <input autoFocus aria-label="Rename chat" value={renaming.value} onChange={(e) => setRenaming({ id: c.id, value: e.target.value })}
+                      <input autoFocus aria-label={l.renameField} value={renaming.value} onChange={(e) => setRenaming({ id: c.id, value: e.target.value })}
                         onBlur={commitRename}
-                        onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') commitRename(); if (e.key === 'Escape') cancelRename(); }}
+                        // preventDefault too: a listener on the same node as React's root
+                        // (`document`, under Next's hydrateRoot) still sees the key
+                        // after stopPropagation, and must know it was handled
+                        onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter' || e.key === 'Escape') e.preventDefault(); if (e.key === 'Enter') commitRename(); if (e.key === 'Escape') cancelRename(); }}
                         className="w-full rounded-[0.25rem] bg-chat-page px-1 text-sm text-chat-fg" />
                     ) : (
                       <>
@@ -246,10 +269,10 @@ export function ChatSidebar(p: ChatSidebarProps) {
                             the "(was: …)" hint is what gets clipped — a long
                             previous title can never squeeze the current one to
                             zero width (full text lives in title=). */}
-                        <span className="line-clamp-2 min-w-0 flex-1 break-words" title={c.title_prev ? c.title + " (was: " + c.title_prev + ")" : c.title}>
+                        <span className="line-clamp-2 min-w-0 flex-1 break-words" title={c.title_prev ? l.previousTitleTooltip(c.title, c.title_prev) : c.title}>
                           {c.title}
                           {c.title_prev && (
-                            <span className="text-[11px] text-chat-dim"> (was: {c.title_prev})</span>
+                            <span className="text-[11px] text-chat-dim"> {context.header.previousTitle(c.title_prev)}</span>
                           )}
                         </span>
                         {/* Both badges sit OUTSIDE the clamping span: inside it,
@@ -261,10 +284,10 @@ export function ChatSidebar(p: ChatSidebarProps) {
                             background, so the chip vanished into the row exactly when
                             the row was selected. */}
                         {scope && <span className="rounded-[0.25rem] bg-chat-surface px-1 text-[10px] text-chat-muted">{scope}</span>}
-                        {c.turn_status === 'running' && <span className="text-[11px] text-chat-muted"> · answering…</span>}
+                        {c.turn_status === 'running' && <span className="text-[11px] text-chat-muted"> · {l.answering}</span>}
                       </>
                     )}
-                    {c.context_full && <AlertCircle className="h-3.5 w-3.5 shrink-0 text-chat-warn" aria-label="Context full" />}
+                    {c.context_full && <AlertCircle className="h-3.5 w-3.5 shrink-0 text-chat-warn" aria-label={l.contextFull} />}
                     {/* Fork is the rare action and stays hover/focus-revealed.
                         Rename and delete are not: hover-only hid them outright
                         on a touch screen, and from anyone who did not think to
@@ -292,12 +315,12 @@ export function ChatSidebar(p: ChatSidebarProps) {
                         colleague's chat with no affordance at all on a touch
                         screen. On your own rows it is still the rare one of
                         three, so it stays hover/focus-revealed. */}
-                    <button type="button" tabIndex={-1} aria-label={`Fork ${c.title}`} onClick={(e) => { e.stopPropagation(); p.onFork(c.id); }}
+                    <button type="button" tabIndex={-1} aria-label={l.forkChat(c.title)} onClick={(e) => { e.stopPropagation(); p.onFork(c.id); }}
                       className={`shrink-0 rounded-[0.25rem] p-0.5 text-chat-dim hover:text-chat-accent ${mine ? 'hidden group-hover:block group-focus-within:block' : ''}`}><GitFork className="h-3.5 w-3.5" aria-hidden /></button>
                     {mine && <>
-                      <button type="button" tabIndex={-1} aria-label={`Rename ${c.title}`} onClick={(e) => { e.stopPropagation(); setRenaming({ id: c.id, value: c.title }); }}
+                      <button type="button" tabIndex={-1} aria-label={l.renameChat(c.title)} onClick={(e) => { e.stopPropagation(); setRenaming({ id: c.id, value: c.title }); }}
                         className="shrink-0 rounded-[0.25rem] p-0.5 text-chat-dim hover:text-chat-accent"><Pencil className="h-3.5 w-3.5" aria-hidden /></button>
-                      <button type="button" tabIndex={-1} aria-label={`Delete ${c.title}`} onClick={(e) => { e.stopPropagation(); setConfirmDelete(c.id); }}
+                      <button type="button" tabIndex={-1} aria-label={l.deleteChat(c.title)} onClick={(e) => { e.stopPropagation(); setConfirmDelete(c.id); }}
                         className="shrink-0 rounded-[0.25rem] p-0.5 text-chat-dim hover:text-chat-negative"><Trash2 className="h-3.5 w-3.5" aria-hidden /></button>
                     </>}
                   </li>
@@ -306,16 +329,16 @@ export function ChatSidebar(p: ChatSidebarProps) {
             </ul>
           </li>
         ))}
-        {flat.length === 0 && <li className="px-2 py-4 text-xs text-chat-dim">No chats{filter ? ' match' : ' yet'}.</li>}
+        {flat.length === 0 && <li className="px-2 py-4 text-xs text-chat-dim">{filter ? l.noMatches : l.noChats}</li>}
       </ul>
       <div className="border-t border-chat-rule p-2">
         <Button variant="ghost" size="sm" className="w-full text-chat-negative hover:opacity-90" onClick={() => { setTyped(''); setConfirmAll(true); }} disabled={mineCount === 0}>{labels.deleteAll}</Button>
       </div>
 
-      <Modal open={confirmDelete !== null} onClose={() => setConfirmDelete(null)} title="Delete chat?" initialFocusRef={cancelRef} rootInertId={p.rootInertId}>
-        <p className="text-sm text-chat-muted">This deletes the chat and its images. This cannot be undone.</p>
+      <Modal open={confirmDelete !== null} onClose={() => setConfirmDelete(null)} title={l.deleteTitle} initialFocusRef={cancelRef} rootInertId={p.rootInertId}>
+        <p className="text-sm text-chat-muted">{l.deleteBody}</p>
         <div className="mt-4 flex justify-end gap-2">
-          <Button ref={cancelRef} variant="outline" onClick={() => setConfirmDelete(null)}>Cancel</Button>
+          <Button ref={cancelRef} variant="outline" onClick={() => setConfirmDelete(null)}>{context.common.cancel}</Button>
           <Button variant="destructive" onClick={() => {
             const id = confirmDelete;
             if (!id) return;
@@ -331,15 +354,15 @@ export function ChatSidebar(p: ChatSidebarProps) {
             p.onDelete(id);
             flushSync(() => { setConfirmDelete(null); setFocusIdx(n); });
             focusOption(n);
-          }}>Delete</Button>
+          }}>{l.deleteConfirm}</Button>
         </div>
       </Modal>
-      <Modal open={confirmAll} onClose={() => setConfirmAll(false)} title="Delete all chats?" initialFocusRef={cancelAllRef} rootInertId={p.rootInertId}>
-        <p className="text-sm text-chat-muted">All {mineCount} of your chats and their images will be deleted. Type <strong>DELETE</strong> to confirm.</p>
-        <input aria-label="Type DELETE to confirm" value={typed} onChange={(e) => setTyped(e.target.value)} className="mt-3 w-full rounded-[0.25rem] border border-chat-rule bg-chat-page px-2 py-1 font-mono text-sm text-chat-fg" />
+      <Modal open={confirmAll} onClose={() => setConfirmAll(false)} title={l.deleteAllTitle} initialFocusRef={cancelAllRef} rootInertId={p.rootInertId}>
+        <p className="text-sm text-chat-muted">{l.deleteAllBody(mineCount, format.count(mineCount))} {emphasise(l.deleteAllTypeWord(deleteAllWord), deleteAllWord)}</p>
+        <input aria-label={l.deleteAllInput(deleteAllWord)} value={typed} onChange={(e) => setTyped(e.target.value)} className="mt-3 w-full rounded-[0.25rem] border border-chat-rule bg-chat-page px-2 py-1 font-mono text-sm text-chat-fg" />
         <div className="mt-4 flex justify-end gap-2">
-          <Button ref={cancelAllRef} variant="outline" onClick={() => setConfirmAll(false)}>Cancel</Button>
-          <Button variant="destructive" disabled={typed !== 'DELETE'} onClick={() => { p.onDeleteAll(); setConfirmAll(false); }}>Delete everything</Button>
+          <Button ref={cancelAllRef} variant="outline" onClick={() => setConfirmAll(false)}>{context.common.cancel}</Button>
+          <Button variant="destructive" disabled={typed !== deleteAllWord} onClick={() => { p.onDeleteAll(); setConfirmAll(false); }}>{l.deleteAllConfirm}</Button>
         </div>
       </Modal>
     </aside>

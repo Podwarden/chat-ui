@@ -23,6 +23,8 @@ import {
   DEFAULT_SELECTION_LABELS, DockSlotContext, SELECTION_SHORTCUT, SelectionActionsContext,
   type DockSlotValue, type SelectionActionsContextValue, type SelectionLabels,
 } from './context';
+import { useChatLabels } from '../../app/labels-context';
+import { localeLanguage } from '../../model/locale';
 
 /** Imperative handle (`ref`) — for a host whose composer lives outside the provider. */
 export interface SelectionActionsHandle {
@@ -64,6 +66,12 @@ export interface SelectionActionsProps {
   touchMode?: 'auto' | 'dock' | 'float';
   /** The transcript, for finding a sent quote's source after a reload. */
   messages?: readonly Message[];
+  /**
+   * The menu's strings, over the nearest `ChatLabelsProvider`'s `selection`
+   * group (English outside one), key by key; `undefined` values are skipped. The Explain/Translate instruction lines and
+   * the language-name locale come from that provider (`labels.prompts`,
+   * `locale`).
+   */
   labels?: Partial<SelectionLabels>;
   className?: string;
   ref?: Ref<SelectionActionsHandle>;
@@ -96,7 +104,18 @@ function messageText(m: Message): string {
  */
 export function SelectionActions(p: SelectionActionsProps) {
   const prefs: SelectionPrefs = { ...DEFAULT_SELECTION_PREFS, ...p.prefs };
-  const labels = useMemo(() => ({ ...DEFAULT_SELECTION_LABELS, ...p.labels }), [p.labels]);
+  const strings = useChatLabels();
+  const contextLabels = strings.labels.selection;
+  // `selectionActions.labels` wins over `labels.selection` key by key; like
+  // `labels`, it only replaces a string with a string (undefined is skipped).
+  const labels = useMemo(() => {
+    const out: SelectionLabels = { ...DEFAULT_SELECTION_LABELS, ...contextLabels };
+    for (const [k, v] of Object.entries(p.labels ?? {})) {
+      if (typeof v === 'string' && Object.hasOwn(out, k)) out[k as keyof SelectionLabels] = v;
+    }
+    return out;
+  }, [contextLabels, p.labels]);
+  const locale = strings.locale;
   const rootRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const [menu, setMenuState] = useState<MenuState | null>(null);
@@ -114,6 +133,9 @@ export function SelectionActions(p: SelectionActionsProps) {
   prefsRef.current = prefs;
   const labelsRef = useRef(labels);
   labelsRef.current = labels;
+  // Instruction lines and locale for the actions, read at call time.
+  const stringsRef = useRef(strings);
+  stringsRef.current = strings;
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -185,7 +207,7 @@ export function SelectionActions(p: SelectionActionsProps) {
     setPos(null);
     if (!viaKeyboard && !announcedRef.current) {
       announcedRef.current = true;
-      say(`${labelsRef.current.available} ${SELECTION_SHORTCUT}.`, false);
+      say(stringsRef.current.labels.selectionPhrases.available(SELECTION_SHORTCUT, labelsRef.current.available), false);
     }
     return true;
   }, [close, isTouch, say, setMenu]);
@@ -342,7 +364,7 @@ export function SelectionActions(p: SelectionActionsProps) {
     switch (action) {
       case 'copy': void doCopy(snap); close(true); return;
       case 'quote': close(false); stage({ ...q, id: newQuoteId() }, false); return;
-      case 'explain': close(false); deliver(buildExplainPrompt(q), [q], prefsRef.current.explainMode); return;
+      case 'explain': close(false); deliver(buildExplainPrompt(q, stringsRef.current.labels.prompts.explain), [q], prefsRef.current.explainMode); return;
       case 'ask': setMenu({ ...m, view: 'ask', focus: false }); return;
       case 'ask-send': {
         const question = (arg ?? '').trim();
@@ -352,7 +374,13 @@ export function SelectionActions(p: SelectionActionsProps) {
         return;
       }
       case 'more': setMenu({ ...m, view: m.view === 'more' ? 'main' : 'more', focus: false }); return;
-      case 'translate': close(false); deliver(buildTranslatePrompt(q, languageName(arg ?? 'en')), [q], 'send'); return;
+      case 'translate': {
+        close(false);
+        const { labels: all, locale: loc } = stringsRef.current;
+        const code = arg ?? 'en';
+        deliver(buildTranslatePrompt(q, languageName(code, loc), (name) => all.prompts.translate(name, code)), [q], 'send');
+        return;
+      }
       case 'branch': {
         close(false);
         if (!q.source) { say(labelsRef.current.cannotBranch); return; }
@@ -435,6 +463,7 @@ export function SelectionActions(p: SelectionActionsProps) {
       canBranch={!!p.onBranchFrom}
       quickActions={p.quickActions ?? DEFAULT_QUICK_ACTIONS}
       languages={p.translateLanguages ?? TRANSLATE_LANGUAGES}
+      locale={locale}
       onRun={run}
       onClose={() => close(true)}
       style={menu.mode === 'float'
@@ -488,6 +517,8 @@ interface MenuBodyProps {
   canBranch: boolean;
   quickActions: readonly QuickAction[];
   languages: readonly string[];
+  /** Language names are shown in this locale; its language is offered first. */
+  locale: string | undefined;
   onRun(action: string, arg?: string): void;
   onClose(): void;
   style?: React.CSSProperties;
@@ -520,16 +551,20 @@ function rove(e: ReactKeyboardEvent<HTMLElement>, container: HTMLElement | null,
   items[to]!.focus();
 }
 
-function MenuBody({ state, labels, canBranch, quickActions, languages, onRun, onClose, style, ref }: MenuBodyProps) {
+function MenuBody({ state, labels, canBranch, quickActions, languages, locale, onRun, onClose, style, ref }: MenuBodyProps) {
   const mainRef = useRef<HTMLDivElement>(null);
   const subRef = useRef<HTMLDivElement>(null);
   const moreRef = useRef<HTMLButtonElement>(null);
   const askRef = useRef<HTMLInputElement>(null);
   const [question, setQuestion] = useState('');
+  // The UI's language first when the host gave one (the user picked it),
+  // else the browser's.
   const langs = useMemo(() => {
-    const mine = browserLanguage();
+    const mine = localeLanguage(locale) ?? browserLanguage();
     return [mine, ...languages.filter((l) => l !== mine)];
-  }, [languages]);
+  }, [languages, locale]);
+  const nameOf = (code: string) => languageName(code, locale);
+  const phrases = useChatLabels().labels.selectionPhrases;
   const [lang, setLang] = useState(langs[0]!);
   const moreViaKeyboard = useRef(false);
   const dock = state.mode === 'dock';
@@ -615,12 +650,12 @@ function MenuBody({ state, labels, canBranch, quickActions, languages, onRun, on
               {quickActions.map((a) => item(a.id, a.label, null))}
               <div className="flex items-center gap-1">
                 <button type="button" role="menuitem" tabIndex={-1} className={cn(itemCls, 'flex-1 justify-start', dock && 'min-h-[44px]')}
-                  aria-label={`${labels.translateTo} ${languageName(lang)}`} onClick={() => onRun('translate', lang)}>
-                  {labels.translateTo} {languageName(lang)}
+                  aria-label={phrases.translateTo(nameOf(lang), labels.translateTo)} onClick={() => onRun('translate', lang)}>
+                  {phrases.translateTo(nameOf(lang), labels.translateTo)}
                 </button>
                 <select aria-label={labels.translateLanguage} value={lang} onChange={(e) => setLang(e.target.value)} tabIndex={-1}
                   className="rounded-[0.25rem] border border-chat-rule bg-chat-page px-1 py-0.5 text-xs text-chat-fg">
-                  {langs.map((l) => <option key={l} value={l}>{languageName(l)}</option>)}
+                  {langs.map((l) => <option key={l} value={l}>{nameOf(l)}</option>)}
                 </select>
               </div>
               {canBranch && item('branch', labels.branch, <GitBranch className="h-3.5 w-3.5" aria-hidden />)}

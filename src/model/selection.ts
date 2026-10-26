@@ -10,6 +10,8 @@
 // a replacement string interprets `$&`, `$1`, `$$`, `` $` `` and `$'`, and a
 // selection containing them would be silently rewritten (Open WebUI #32355).
 
+import { canonicalLocale, localeLanguage } from './locale';
+
 /** Where a quote came from, so it can link back to the passage. */
 export interface QuoteSource {
   /** The id of the message the text was selected in. */
@@ -128,8 +130,16 @@ export function buildAskPrompt(q: Pick<Quote, 'text' | 'kind' | 'lang'>, questio
   return quoteToMarkdown(q) + '\n\n' + question.trim();
 }
 
-export function buildTranslatePrompt(q: Pick<Quote, 'text' | 'kind' | 'lang'>, language: string): string {
-  return buildInstructionPrompt(PROMPTS.translate + ' ' + language + ':', q);
+/**
+ * "Translate this into <language>:" + the quote. `instruction` replaces the
+ * English line (a host's localised prompt); it gets the same `language`.
+ */
+export function buildTranslatePrompt(
+  q: Pick<Quote, 'text' | 'kind' | 'lang'>,
+  language: string,
+  instruction?: (language: string) => string,
+): string {
+  return buildInstructionPrompt(instruction ? instruction(language) : PROMPTS.translate + ' ' + language + ':', q);
 }
 
 /** A built-in "More ▸" action. Hosts may replace the list (`quickActions`). */
@@ -151,20 +161,29 @@ export const TRANSLATE_LANGUAGES: readonly string[] = [
   'en', 'es', 'fr', 'de', 'it', 'pt', 'ru', 'uk', 'pl', 'tr', 'ar', 'hi', 'zh', 'ja', 'ko',
 ];
 
-/** English display name of a BCP 47 language code ("fr" → "French"); the code itself when Intl cannot say. */
-export function languageName(code: string): string {
-  try {
-    const dn = new Intl.DisplayNames(['en'], { type: 'language' });
-    return dn.of(code) ?? code;
-  } catch {
-    return code;
+/**
+ * Display name of a BCP 47 language code in `locale` ("fr" → "French" in
+ * English, "французский" in Russian). English when `locale` is missing or
+ * not a valid tag (`ru_RU` is read as `ru-RU`); the code itself only when
+ * `Intl` cannot name it at all.
+ */
+export function languageName(code: string, locale = 'en'): string {
+  const lang = code.replace(/_/g, '-');
+  for (const locales of [[canonicalLocale(locale) ?? 'en', 'en'], ['en']]) {
+    try {
+      const name = new Intl.DisplayNames(locales, { type: 'language' }).of(lang);
+      if (name) return name;
+    } catch {
+      /* invalid code, or no DisplayNames: try English, then give up */
+    }
   }
+  return code;
 }
 
 /** The base language of the browser locale ("en-GB" → "en"), `en` outside a browser. */
 export function browserLanguage(): string {
   const l = typeof navigator !== 'undefined' ? navigator.language : '';
-  return (l || 'en').split('-')[0]!.toLowerCase();
+  return localeLanguage(l) ?? 'en';
 }
 
 /**

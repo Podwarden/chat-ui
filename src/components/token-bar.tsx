@@ -1,10 +1,13 @@
+import { useChatLabels } from '../app/labels-context';
+
 export function TokenBar({ completion, max, streaming }: { completion: number; max: number; streaming: boolean }) {
+  const { labels, format } = useChatLabels();
   const pct = Math.min(100, Math.round((completion / Math.max(1, max)) * 100));
   return (
     <div className="mt-1 flex items-center gap-2 text-[11px] text-chat-dim">
       <div
         role="progressbar"
-        aria-label="Response tokens"
+        aria-label={labels.meters.responseTokens}
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={pct}
@@ -12,7 +15,7 @@ export function TokenBar({ completion, max, streaming }: { completion: number; m
       >
         <div className={`h-full ${streaming ? 'bg-chat-user' : 'bg-chat-dim'}`} style={{ width: `${pct}%` }} />
       </div>
-      <span>{`${completion} / ${max}`}</span>
+      <span>{`${format.count(completion)} / ${format.count(max)}`}</span>
     </div>
   );
 }

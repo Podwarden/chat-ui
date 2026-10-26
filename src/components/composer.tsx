@@ -9,6 +9,7 @@ import type { Draft } from '../hooks/use-attachments';
 import { AttachmentTray } from './attachment-tray';
 import { QuoteChips } from './selection/quote-chips';
 import type { Quote } from '../model/selection';
+import { useChatLabels } from '../app/labels-context';
 
 export interface ComposerProps {
   value: string;
@@ -61,6 +62,8 @@ export interface ComposerProps {
    * another field: the user just asked for it.
    */
   focusSignal?: number;
+  /** The short placeholder (`composer.compactPlaceholder`): the full one wraps and clips in a narrow box. */
+  compact?: boolean;
 }
 
 const MAX_ROWS_PX = 8 * 24;
@@ -78,6 +81,7 @@ function focusIsElsewhereEditable(ta: HTMLTextAreaElement): boolean {
 }
 
 export function Composer(p: ComposerProps) {
+  const { labels: { composer: l } } = useChatLabels();
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -144,11 +148,11 @@ export function Composer(p: ComposerProps) {
   const reason =
     p.disabledReason ??
     (missing
-      ? (p.drafts.find((d) => d.status === 'missing')?.error ?? 'An image expired — remove it and attach again')
+      ? (p.drafts.find((d) => d.status === 'missing')?.error ?? l.imageExpired)
       : failed
-        ? 'Remove the failed image to send'
+        ? l.removeFailedImage
         : busy
-          ? 'Uploading images…'
+          ? l.uploadingImages
           : undefined);
 
   function send() {
@@ -198,7 +202,7 @@ export function Composer(p: ComposerProps) {
         <Button
           variant="ghost"
           size="sm"
-          aria-label="Attach image"
+          aria-label={l.attachImage}
           title={p.canAttach ? undefined : p.attachDisabledReason}
           onClick={() => fileRef.current?.click()}
           disabled={p.disabled || p.isStreaming || !p.canAttach}
@@ -216,18 +220,18 @@ export function Composer(p: ComposerProps) {
           disabled={taDisabled}
           placeholder={
             p.disabled
-              ? (p.disabledReason ?? 'Unavailable')
-              : 'Message… (Enter to send, Shift+Enter for newline, drop or paste images)'
+              ? (p.disabledReason ?? l.unavailable)
+              : p.compact ? l.compactPlaceholder : l.placeholder
           }
-          aria-label="Message"
+          aria-label={l.messageLabel}
           className="max-h-48 min-h-[2.25rem] flex-1 resize-none rounded-[0.25rem] bg-chat-page px-3 py-2 font-mono text-sm text-chat-fg placeholder:text-chat-dim focus:[outline:none] focus:ring-2 focus:ring-chat-accent"
         />
         {p.isStreaming ? (
-          <Button variant="destructive" size="md" aria-label="Stop" onClick={p.onAbort}>
+          <Button variant="destructive" size="md" aria-label={l.stop} onClick={p.onAbort}>
             <Square className="h-4 w-4" aria-hidden />
           </Button>
         ) : (
-          <Button size="md" aria-label="Send" onClick={send} disabled={!canSend}>
+          <Button size="md" aria-label={l.send} onClick={send} disabled={!canSend}>
             <Send className="h-4 w-4" aria-hidden />
           </Button>
         )}

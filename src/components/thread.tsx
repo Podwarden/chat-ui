@@ -6,7 +6,8 @@ import { ArrowDown } from 'lucide-react';
 import type { AttachmentOut } from '../adapters/types';
 import type { ThreadState } from '../model/message';
 import { MessageItem, type MessageItemProps } from './message-item';
-import { DEFAULT_LABELS, type Labels } from '../app/labels';
+import type { ChatUiLabels, Labels } from '../app/labels';
+import { useChatLabels } from '../app/labels-context';
 import { useSelectionActions } from './selection/context';
 
 type Handlers = Pick<MessageItemProps, 'onRegenerate' | 'onForkHere' | 'onEdit' | 'onPick' | 'onRetry' | 'onOpenImage'>;
@@ -67,22 +68,35 @@ export interface ThreadProps extends Handlers {
   reasoningOpen: boolean;
   /** The user opened/closed a reasoning block by hand; the page persists it. */
   onReasoningToggle: (open: boolean) => void;
-  /** Overrides for the two strings this component owns; English otherwise. */
+  /**
+   * Overrides for the two strings this component owns, over whatever the
+   * nearest `ChatLabelsProvider` says (English outside one).
+   */
   labels?: Partial<Pick<Labels, 'startConversation' | 'jumpToLatest'>>;
 }
+
+/** What the reducer writes into `state.announcement` (see `model/message.ts`). */
+const DONE_ANNOUNCEMENT = 'Response complete';
+const ERROR_PREFIX = 'Error: ';
 
 /**
  * The `done` event makes the reducer announce "Response complete" for every
  * terminal reason. Two of them are not a completion at all and must read
  * differently to a screen reader — the user pressed Stop, or the stream died.
+ *
+ * The reducer is pure and locale-free, so its two fixed announcements are
+ * mapped to the host's strings here; anything else it might carry is passed
+ * through as is.
  */
-function announcementFor(state: ThreadState): string {
+function announcementFor(state: ThreadState, l: ChatUiLabels['thread']): string {
   const a = state.announcement;
-  if (!a || a !== 'Response complete') return a ?? '';
+  if (!a) return '';
+  if (a.startsWith(ERROR_PREFIX)) return l.error(a.slice(ERROR_PREFIX.length));
+  if (a !== DONE_ANNOUNCEMENT) return a;
   const last = state.messages[state.messages.length - 1];
-  if (last?.finishReason === 'aborted') return 'Response stopped';
-  if (last?.finishReason === 'interrupted') return 'Connection lost';
-  return a;
+  if (last?.finishReason === 'aborted') return l.responseStopped;
+  if (last?.finishReason === 'interrupted') return l.connectionLost;
+  return l.responseComplete;
 }
 
 /**
@@ -100,7 +114,8 @@ const JUMP_DEBOUNCE_MS = 200;
 const TOUCH_SLOP_PX = 8;
 
 export function Thread(p: ThreadProps) {
-  const labels = { ...DEFAULT_LABELS, ...p.labels };
+  const { labels: context } = useChatLabels();
+  const labels = { ...context, ...p.labels };
   const ref = useRef<VirtuosoHandle>(null);
   const msgs = p.state.messages;
   const tail = p.state.pendingTail;
@@ -321,7 +336,7 @@ export function Thread(p: ThreadProps) {
       />
       {/* streaming text itself is never announced — only terminal states and errors */}
       <div role="status" aria-live="polite" className="sr-only">
-        {announcementFor(p.state)}
+        {announcementFor(p.state, context.thread)}
       </div>
       {/* nothing to jump TO on an empty thread, however the scroller reports */}
       {showJump && (msgs.length > 0 || tail) && (

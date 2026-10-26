@@ -5,6 +5,8 @@ import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { cn } from "./cn";
 import { Button } from "./button";
+import { useChatLabels } from "../app/labels-context";
+import { useOverlaysSuspended, usePortalContainer } from "./portal";
 
 interface ModalProps {
   open: boolean;
@@ -47,6 +49,17 @@ export function Modal({
   size = "default",
   rootInertId,
 }: ModalProps) {
+  const { labels } = useChatLabels();
+  // A host container (see ./portal) keeps the overlay inside the chat's own
+  // box: `absolute` against it instead of `fixed` against the viewport, and
+  // the page behind it keeps its scroll.
+  const container = usePortalContainer();
+  const containerRef = useRef(container);
+  containerRef.current = container;
+  const overlayRef = useRef<HTMLDivElement | null>(null);
+  // Out of sight with its host (see ./portal): rendered closed, state kept.
+  const suspended = useOverlaysSuspended();
+  const shown = open && !suspended;
   const [mounted, setMounted] = useState(false);
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
@@ -72,8 +85,13 @@ export function Modal({
     setMounted(true);
   }, []);
 
+  // Keyed on `mounted` too, so the body below runs only once the portal is
+  // committed: a dialog that mounts already open (fork, lightbox) would
+  // otherwise run it before its overlay exists. Everything it sets is then
+  // set synchronously and undone by its own cleanup — StrictMode's
+  // mount/unmount/mount included.
   useEffect(() => {
-    if (!open) return;
+    if (!shown || !mounted) return;
 
     previouslyFocusedRef.current = document.activeElement as HTMLElement | null;
 
@@ -108,16 +126,34 @@ export function Modal({
     };
 
     document.addEventListener("keydown", handleKeydown);
-    document.body.style.overflow = "hidden";
+    const contained = containerRef.current;
+    if (!contained) document.body.style.overflow = "hidden";
     // Prevent screen-reader virtual-cursor (VoiceOver/NVDA arrow-key navigation)
     // from reaching content behind the modal. The keyboard Tab trap alone is not
     // sufficient — browse-mode can still wander outside the dialog without inert.
+    //
+    // Never an element the dialog itself will sit inside: a widget hosted
+    // under the default `#app-root` portals INTO that root, and inerting it
+    // would make the dialog unreachable too.
     const inertRootId = rootInertIdRef.current ?? "app-root";
-    document.getElementById(inertRootId)?.setAttribute("inert", "");
+    const inertRoot = document.getElementById(inertRootId);
+    const inertedRoot = inertRoot && !inertRoot.contains(contained ?? document.body) ? inertRoot : null;
+    inertedRoot?.setAttribute("inert", "");
+    // Inside a container, what the dialog covers is the container's other
+    // children (the chat itself) — those are what browse-mode must not reach.
+    const inertedSiblings: Element[] = [];
+    if (contained) {
+      for (const el of Array.from(contained.children)) {
+        // an element already inert is someone else's to restore
+        if (el === overlayRef.current || el.hasAttribute("inert") || el.querySelector("[data-modal-overlay]")) continue;
+        el.setAttribute("inert", "");
+        inertedSiblings.push(el);
+      }
+    }
 
-    // Focus the dialog (or first focusable descendant) on next tick so the
-    // portal child has actually mounted. If the caller provided an explicit
-    // initialFocusRef and that element is focusable, prefer it.
+    // Focus the dialog (or first focusable descendant) on next tick. If the
+    // caller provided an explicit initialFocusRef and that element is
+    // focusable, prefer it.
     queueMicrotask(() => {
       const root = dialogRef.current;
       if (!root) return;
@@ -132,22 +168,27 @@ export function Modal({
 
     return () => {
       document.removeEventListener("keydown", handleKeydown);
-      document.body.style.overflow = "";
-      document.getElementById(inertRootId)?.removeAttribute("inert");
+      if (!contained) document.body.style.overflow = "";
+      inertedRoot?.removeAttribute("inert");
+      for (const el of inertedSiblings) el.removeAttribute("inert");
       // Restore focus to the element that opened the modal.
       const prev = previouslyFocusedRef.current;
       if (prev && typeof prev.focus === "function") {
         prev.focus();
       }
     };
-  }, [open]);
+  }, [shown, mounted]);
 
-  if (!open || !mounted) return null;
+  if (!shown || !mounted) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4" data-modal-overlay>
+    <div
+      ref={overlayRef}
+      className={cn(container ? "absolute" : "fixed", "inset-0 z-[9999] flex items-center justify-center p-4")}
+      data-modal-overlay
+    >
       <div
-        className="fixed inset-0 bg-chat-page/60 backdrop-blur-sm"
+        className={cn(container ? "absolute" : "fixed", "inset-0 bg-chat-page/60 backdrop-blur-sm")}
         onClick={onClose}
         aria-hidden
       />
@@ -155,7 +196,8 @@ export function Modal({
         ref={dialogRef}
         tabIndex={-1}
         className={cn(
-          "relative z-[1] flex max-h-[85vh] w-full flex-col rounded-lg border border-chat-rule bg-chat-surface shadow-xl [outline:none]",
+          "relative z-[1] flex w-full flex-col rounded-lg border border-chat-rule bg-chat-surface shadow-xl [outline:none]",
+          container ? "max-h-full" : "max-h-[85vh]",
           size === "lg" ? "max-w-xl" : "max-w-lg",
           className
         )}
@@ -175,7 +217,7 @@ export function Modal({
             size="sm"
             onClick={onClose}
             className="h-8 w-8 p-0"
-            aria-label="Close"
+            aria-label={labels.common.close}
           >
             <X className="h-4 w-4" />
           </Button>
@@ -183,6 +225,6 @@ export function Modal({
         <div className="flex-1 overflow-y-auto p-4">{children}</div>
       </div>
     </div>,
-    document.body
+    container ?? document.body
   );
 }

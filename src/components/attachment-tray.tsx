@@ -2,6 +2,7 @@
 
 import { X } from 'lucide-react';
 import type { Draft } from '../hooks/use-attachments';
+import { useChatLabels } from '../app/labels-context';
 
 /**
  * Composer draft thumbnails.
@@ -13,9 +14,10 @@ import type { Draft } from '../hooks/use-attachments';
  * carries the short form plus the full text in `title`.
  */
 export function AttachmentTray({ drafts, onRemove }: { drafts: Draft[]; onRemove: (localId: string) => void }) {
+  const { labels: { attachments: l } } = useChatLabels();
   if (drafts.length === 0) return null;
   return (
-    <ul className="flex flex-wrap gap-2 px-2 pt-2" aria-label="Attached images">
+    <ul className="flex flex-wrap gap-2 px-2 pt-2" aria-label={l.tray}>
       {drafts.map((d) => {
         const bad = d.status === 'error' || d.status === 'missing';
         return (
@@ -33,17 +35,17 @@ export function AttachmentTray({ drafts, onRemove }: { drafts: Draft[]; onRemove
             />
             {d.status === 'uploading' && (
               <span className="absolute inset-x-0 bottom-0 bg-chat-surface/80 text-center text-[10px] text-chat-muted">
-                uploading…
+                {l.uploading}
               </span>
             )}
             {bad && (
               <span className="absolute inset-x-0 bottom-0 truncate bg-chat-negative px-1 text-center text-[10px] text-chat-on-accent">
-                {d.status === 'missing' ? 'expired' : 'failed'}
+                {d.status === 'missing' ? l.expired : l.failed}
               </span>
             )}
             <button
               type="button"
-              aria-label={`Remove ${d.file.name}`}
+              aria-label={l.remove(d.file.name)}
               onClick={() => onRemove(d.localId)}
               className="absolute right-0.5 top-0.5 rounded-full bg-chat-surface/80 p-0.5 text-chat-muted hover:text-chat-fg"
             >

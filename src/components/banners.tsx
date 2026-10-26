@@ -5,6 +5,7 @@ import { Button } from '@/ui/button';
 import type { Budget, ChatSummary, ModelInfo } from '../adapters/types';
 import type { ContextMeter } from '../model/context-meter';
 import type { LastError } from '../hooks/use-chat-thread';
+import { useChatLabels } from '../app/labels-context';
 
 export interface BannersProps {
   lastError: LastError | null; meter: ContextMeter; budget: Budget | null; chat: ChatSummary | null;
@@ -42,40 +43,42 @@ export interface BannersProps {
 const NO_MODELS: readonly ModelInfo[] = [];
 
 export function Banners({ lastError, meter, budget, chat, modelLoaded, onFork, onRetry, actionError, onDismissActionError, noModelText, models = NO_MODELS, onSwitchModel, onOpenSettings }: BannersProps) {
+  const { labels, format } = useChatLabels();
+  const l = labels.banners;
   const items: { key: string; text: string; action?: ReactNode }[] = [];
   if (meter.state === 'full') {
-    items.push({ key: 'ctx', text: 'Context window is full. The chat stays readable; fork it to continue.', action: <Button size="sm" variant="outline" onClick={onFork}>Fork</Button> });
+    items.push({ key: 'ctx', text: l.contextFull, action: <Button size="sm" variant="outline" onClick={onFork}>{l.fork}</Button> });
   }
   // `budget.window` is nullable (no usage reported yet / Hub-only enrichment)
   // — only `blocked_until` drives this banner, so no read of `window` here.
   if (budget?.blocked_until) {
-    items.push({ key: 'budget', text: `Budget exhausted — resets ${new Date(budget.blocked_until).toLocaleString()}.` });
+    items.push({ key: 'budget', text: l.budgetExhausted(format.dateTime(budget.blocked_until)) });
   }
   if (lastError?.code === 'turn_in_flight') {
-    items.push({ key: 'inflight', text: 'Another turn is running for this chat (maybe in another tab).', action: <Button size="sm" variant="outline" onClick={onRetry}>Retry</Button> });
+    items.push({ key: 'inflight', text: l.turnInFlight, action: <Button size="sm" variant="outline" onClick={onRetry}>{labels.common.retry}</Button> });
   }
   // The stream dropped without a terminal frame (`use-chat-thread.ts` reports
   // this as `code: 'upstream', message: 'connection lost'`) — offer Retry.
   if (lastError?.code === 'upstream') {
-    items.push({ key: 'upstream', text: 'Connection lost — retry?', action: <Button size="sm" variant="outline" onClick={onRetry}>Retry</Button> });
+    items.push({ key: 'upstream', text: l.connectionLost, action: <Button size="sm" variant="outline" onClick={onRetry}>{labels.common.retry}</Button> });
   }
   if (chat && !modelLoaded) {
     let action: ReactNode;
     if (chat.model && !noModelText) {
       if (models.length === 1 && onSwitchModel) {
         const only = models[0];
-        action = <Button size="sm" variant="outline" onClick={() => onSwitchModel(only.id)}>Use {only.display}</Button>;
+        action = <Button size="sm" variant="outline" onClick={() => onSwitchModel(only.id)}>{l.useModel(only.display)}</Button>;
       } else if (models.length > 1 && onOpenSettings) {
-        action = <Button size="sm" variant="outline" onClick={onOpenSettings}>Choose a model</Button>;
+        action = <Button size="sm" variant="outline" onClick={onOpenSettings}>{l.chooseModel}</Button>;
       }
     }
-    items.push({ key: 'model', text: noModelText ?? (chat.model ? `Model "${chat.model}" is not loaded.` : 'Pick a model in Settings.'), action });
+    items.push({ key: 'model', text: noModelText ?? (chat.model ? l.modelNotLoaded(chat.model) : l.pickModel), action });
   }
   if (actionError) {
     items.unshift({
       key: 'action',
       text: actionError,
-      action: <Button size="sm" variant="ghost" aria-label="Dismiss" onClick={onDismissActionError}>Dismiss</Button>,
+      action: <Button size="sm" variant="ghost" aria-label={labels.common.dismiss} onClick={onDismissActionError}>{labels.common.dismiss}</Button>,
     });
   }
   if (items.length === 0) return null;

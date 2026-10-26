@@ -6,9 +6,16 @@
 // a 500px panel, cancelling a layout's padding) belong to the host, which
 // states them through `className`.
 //
-// Nothing here is ambient. Transport, theme, capabilities, routing and the
-// handful of overridable strings all arrive as props; the component mounts the
-// two providers the tree below it reads from.
+// Below `COMPACT_BELOW_PX` of its OWN width (not the viewport's — a widget on
+// a desktop screen is narrow while the viewport is not), or always under
+// `layout="widget"`, the same tree goes compact: the chat list becomes a
+// drawer over the transcript, settings an overlay, the meters lose their
+// figures. Nothing is unmounted by the switch, so a streaming turn survives
+// a resize.
+//
+// Nothing here is ambient. Transport, theme, capabilities, routing, the
+// strings and the locale all arrive as props; the component mounts the three
+// providers the tree below it reads from.
 //
 // The inner component owns exactly four pieces of state — the selected chat, the
 // composer text, and the two transient dialogs (fork, lightbox). Everything
@@ -23,7 +30,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ClipboardEvent as ReactClipboardEvent, DragEvent as ReactDragEvent } from 'react';
 import useSWR from 'swr';
-import { Settings2 } from 'lucide-react';
+import { PanelLeftOpen, Settings2 } from 'lucide-react';
 import { Button } from '@/ui/button';
 import { cn } from '@/ui/cn';
 import { DEFAULT_CAPABILITIES, type Capabilities, type ScopeOption } from '../adapters/capabilities';
@@ -48,7 +55,9 @@ import { BudgetMeter } from '../components/budget-meter';
 import { Banners } from '../components/banners';
 import { ForkDialog } from '../components/fork-dialog';
 import { Lightbox } from '../components/lightbox';
-import { DEFAULT_LABELS, type Labels } from './labels';
+import type { ChatUiLabelOverrides } from './labels';
+import { ChatLabelsProvider, useChatLabels } from './labels-context';
+import { OverlaysSuspendedProvider, PortalContainerProvider } from '../ui/portal';
 
 // Module-level so `models` keeps one identity while SWR has no data — a fresh
 // `[]` default would churn every memo and prop that depends on it.
@@ -81,11 +90,32 @@ function lastForkableSeq(messages: readonly { seq: number }[]): number | null {
   return max;
 }
 
-const NO_VISION_REASON = "This model can't see images";
-
 /** Whether a paste carries at least one image file (vs. plain text). */
 function pasteHasImage(e: ReactClipboardEvent): boolean {
   return Array.from(e.clipboardData?.items ?? []).some((i) => i.kind === 'file' && i.type.startsWith('image/'));
+}
+
+/** Root width under which `layout="auto"` goes compact. */
+export const COMPACT_BELOW_PX = 640;
+
+/**
+ * The element's content width, kept current by a ResizeObserver; `null` until
+ * the first measurement, on the server, and where ResizeObserver does not
+ * exist (the auto layout then stays full, as it was before 0.1.27).
+ */
+function useElementWidth(ref: React.RefObject<HTMLElement | null>, on: boolean): number | null {
+  const [width, setWidth] = useState<number | null>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!on || !el || typeof ResizeObserver === 'undefined') { setWidth(null); return; }
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[entries.length - 1]?.contentRect.width;
+      if (typeof w === 'number') setWidth(w);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [ref, on]);
+  return width;
 }
 
 function errorText(e: unknown, fallback: string): string {
@@ -112,6 +142,7 @@ export interface SelectionActionsOptions {
   translateLanguages?: readonly string[];
   /** `'auto'` (default): docked bar on touch, floating menu on a mouse. */
   touchMode?: 'auto' | 'dock' | 'float';
+  /** The selection strings; wins over `labels.selection` key by key. */
   labels?: Partial<SelectionLabels>;
 }
 
@@ -127,8 +158,49 @@ export interface ChatAppProps {
   theme: ChatTheme;
   /** Which chat to open on mount. Seeds the selection once; later changes are ignored. */
   initialChatId?: string | null;
-  /** Called whenever the selection changes — never for `initialChatId` itself. */
+  /**
+   * The open chat, from the host. Unlike `initialChatId` every CHANGE is
+   * honoured: setting it to another id opens that chat, without a remount and
+   * without an `onChatIdChange` echo. The user can still switch chats; that is
+   * reported through `onChatIdChange`, and a host that stores the id simply
+   * passes the new value back. An id the list does not have falls back to the
+   * first chat, as a vanished selection always has. Wins over `initialChatId`.
+   */
+  chatId?: string | null;
+  /** Called whenever the selection changes — never for `initialChatId` itself, nor for a `chatId` the host set. */
   onChatIdChange?: (id: string | null) => void;
+  /**
+   * `'auto'` (default): compact below 640 px (`COMPACT_BELOW_PX`) of the root's own
+   * width, full otherwise. `'widget'`: always compact — the chat list is a
+   * drawer over the transcript, settings an overlay. `'full'`: never compact,
+   * the pre-0.1.27 layout at every width.
+   */
+  layout?: 'auto' | 'full' | 'widget';
+  /**
+   * The full layout's chat list: `true` collapses it to the icon rail.
+   * Controlled when set; `onSidebarCollapsedChange` reports the user's
+   * toggles either way. The compact layout's drawer is separate state: it
+   * always starts closed and closes again when a chat is picked.
+   */
+  sidebarCollapsed?: boolean;
+  /** The full layout's initial rail state when `sidebarCollapsed` is not controlled (default `false`). */
+  defaultSidebarCollapsed?: boolean;
+  onSidebarCollapsedChange?: (collapsed: boolean) => void;
+  /**
+   * Where the dialogs and the lightbox portal to (default `document.body`).
+   * Pass the element the chat lives in — a widget panel, an iframe's root —
+   * to keep them inside it; it must be positioned, since the overlay is then
+   * `absolute` against it.
+   */
+  portalContainer?: HTMLElement | null;
+  /** Called when a reply starts and stops streaming (not on mount). */
+  onStreamingChange?: (streaming: boolean) => void;
+  /**
+   * The host has the chat out of sight but mounted (a closed widget panel).
+   * Its dialogs render closed meanwhile — nothing stays inert, no key
+   * listener stays on the page — and come back when it turns `false`.
+   */
+  suspended?: boolean;
   /**
    * Query parameter the open chat's id is WRITTEN to, via
    * `history.replaceState` (no navigation, no re-render, no scroll reset), so
@@ -147,8 +219,20 @@ export interface ChatAppProps {
   className?: string;
   /** id of the host element modals mark `inert` while open (default `"app-root"`). */
   rootInertId?: string;
-  /** Overrides for the seven host-facing strings; English otherwise. */
-  labels?: Partial<Labels>;
+  /**
+   * Any of the package's strings (`ChatUiLabels`); everything left out stays
+   * English. Groups merge key by key, so `{ composer: { send: 'Senden' } }`
+   * keeps the rest of the composer's defaults. Keep the object stable
+   * (module-level or memoised): a new one re-renders every message row.
+   */
+  labels?: ChatUiLabelOverrides;
+  /**
+   * BCP 47 locale of the UI (`'ru'`, `'es-MX'`). Drives the language names in
+   * Translate (English without it), the language Translate offers first, and
+   * every number and date the package prints (the runtime's own formatting
+   * without it, as before). The strings themselves come from `labels`.
+   */
+  locale?: string;
   /**
    * Who is looking. Only consulted when `capabilities.sharedChats` is on, to
    * tell the viewer's own chats from a colleague's in the sidebar.
@@ -173,7 +257,13 @@ export function ChatApp(props: ChatAppProps) {
   return (
     <AdaptersProvider adapters={props.adapters}>
       <ChatThemeProvider theme={props.theme}>
-        <ChatAppInner {...props} />
+        <ChatLabelsProvider labels={props.labels} locale={props.locale}>
+          <PortalContainerProvider value={props.portalContainer ?? null}>
+            <OverlaysSuspendedProvider value={!!props.suspended}>
+              <ChatAppInner {...props} />
+            </OverlaysSuspendedProvider>
+          </PortalContainerProvider>
+        </ChatLabelsProvider>
       </ChatThemeProvider>
     </AdaptersProvider>
   );
@@ -182,21 +272,44 @@ export function ChatApp(props: ChatAppProps) {
 function ChatAppInner({
   capabilities: capabilitiesOverride,
   initialChatId,
+  chatId,
   onChatIdChange,
+  layout = 'auto',
+  sidebarCollapsed: sidebarCollapsedProp,
+  defaultSidebarCollapsed = false,
+  onSidebarCollapsedChange,
+  onStreamingChange,
   syncUrlParam = 'c',
   className,
   rootInertId,
-  labels: labelsOverride,
   currentUserId,
   selectionActions,
 }: ChatAppProps) {
-  // `initialChatId` is a seed, not a controlled value: the selection is this
-  // component's state from the first render on, and a host that wants to drive
-  // it from the outside remounts (`key=`) rather than fighting the effects
-  // below over who owns it.
-  const [selectedId, setSelectedId] = useState<string | null>(() => initialChatId ?? null);
+  // The selection is this component's state from the first render on.
+  // `initialChatId` only seeds it; `chatId` seeds it too and then pushes each
+  // later change in (the effect further down) — the user's own switches still
+  // land here first, so the auto-select and vanished-chat rules below keep a
+  // single owner.
+  const [selectedId, setSelectedId] = useState<string | null>(() => (chatId !== undefined ? chatId : initialChatId) ?? null);
   const [input, setInput] = useState('');
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [railState, setRailState] = useState(defaultSidebarCollapsed);
+  const railCollapsed = sidebarCollapsedProp ?? railState;
+  const toggleRail = () => {
+    const next = !railCollapsed;
+    if (sidebarCollapsedProp === undefined) setRailState(next);
+    onSidebarCollapsedChange?.(next);
+  };
+  const rootRef = useRef<HTMLDivElement>(null);
+  const width = useElementWidth(rootRef, layout === 'auto');
+  const compact = layout === 'widget' || (layout === 'auto' && width !== null && width < COMPACT_BELOW_PX);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const drawerToggleRef = useRef<HTMLButtonElement>(null);
+  const drawerRef = useRef<HTMLDivElement>(null);
+  // Leaving the compact layout takes the drawer with it; coming back starts closed.
+  useEffect(() => { if (!compact) setDrawerOpen(false); }, [compact]);
+  useEffect(() => {
+    if (drawerOpen) drawerRef.current?.querySelector<HTMLElement>('button:not([disabled]), input')?.focus();
+  }, [drawerOpen]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [forkReq, setForkReq] = useState<{ mode: 'fork' | 'edit'; atSeq: number; text?: string; chatId: string } | null>(null);
   const [lightbox, setLightbox] = useState<AttachmentOut | null>(null);
@@ -244,7 +357,10 @@ function ChatAppInner({
   // `capabilities` identity changes — a fresh object per render would refetch
   // the skill list on every keystroke in the composer.
   const capabilities = useMemo(() => ({ ...DEFAULT_CAPABILITIES, ...capabilitiesOverride }), [capabilitiesOverride]);
-  const labels = useMemo(() => ({ ...DEFAULT_LABELS, ...labelsOverride }), [labelsOverride]);
+  const { labels } = useChatLabels();
+  // The callbacks below must keep one identity (see the header), so they read
+  // the strings through a ref rather than closing over them.
+  const labelsRef = useRef(labels); labelsRef.current = labels;
 
   // Loaded once per `capabilities` identity (the same contract <SettingsPanel>
   // states for `listSkills`), and cancellation-safe: a capabilities swap while
@@ -296,12 +412,14 @@ function ChatAppInner({
   // for it instead of persisting the pre-edit snapshot
   const settingsPatchRef = useRef<Promise<void>>(Promise.resolve());
 
+  // A host-set id waiting for the list to catch up (see the `chatId` effect).
+  const [pendingHostId, setPendingHostId] = useState<string | null>(null);
   // select the first chat when none is chosen; clear the selection if it vanished
   useEffect(() => {
-    if (chatsApi.isLoading) return;
+    if (chatsApi.isLoading || (selectedId !== null && selectedId === pendingHostId)) return;
     if (selectedId && !chatsApi.chats.some((c) => c.id === selectedId)) setSelectedId(chatsApi.chats[0]?.id ?? null);
     else if (!selectedId && chatsApi.chats[0]) setSelectedId(chatsApi.chats[0].id);
-  }, [chatsApi.chats, chatsApi.isLoading, selectedId]);
+  }, [chatsApi.chats, chatsApi.isLoading, selectedId, pendingHostId]);
 
   // A chat switch drops the drafts hook's state, so the ids the previous
   // chat's turn was carrying must go with it — otherwise the effect further
@@ -335,6 +453,26 @@ function ChatAppInner({
     reportedIdRef.current = selectedId;
     onChatIdChangeRef.current?.(selectedId);
   }, [selectedId]);
+
+  // A host-set `chatId` change opens that chat. Only CHANGES of the prop act:
+  // a host that leaves it alone after the user switched chats does not drag
+  // the selection back. Marked as reported first, so it is not echoed.
+  //
+  // An id the list does not have yet (a chat the host just created through
+  // its own API) is held while the list refreshes once; only an id still
+  // missing after that falls back like any vanished selection.
+  const chatIdPropRef = useRef(chatId);
+  useEffect(() => {
+    if (chatId === undefined || chatId === chatIdPropRef.current) { chatIdPropRef.current = chatId; return; }
+    chatIdPropRef.current = chatId;
+    reportedIdRef.current = chatId;
+    setSelectedId(chatId);
+    if (chatId && !chatsApiRef.current.chats.some((c) => c.id === chatId)) {
+      setPendingHostId(chatId);
+      void Promise.resolve(chatsApiRef.current.mutate()).catch(() => undefined)
+        .finally(() => setPendingHostId((cur) => (cur === chatId ? null : cur)));
+    }
+  }, [chatId]);
 
   // Two rules behind one `model`, and which one applies is the HOST's call.
   // Under the default `modelSelection: 'user'` this is the 0.1.2 lookup to the
@@ -383,23 +521,30 @@ function ChatAppInner({
   // wrong one is worse than saying nothing: "This model can't see images" in
   // front of an operator who has not loaded a model at all sends them off to
   // find a vision model they already have.
-  const attachDisabledReason = canAttach ? undefined : model ? NO_VISION_REASON : labels.loadModelFirst;
+  const attachDisabledReason = canAttach ? undefined : model ? labels.composer.noVision : labels.loadModelFirst;
   const attachReasonRef = useRef(attachDisabledReason); attachReasonRef.current = attachDisabledReason;
   const maxTokens = thread.chat?.settings.max_tokens ?? 1024;
   const meter = useContextMeter({ context: thread.state.context, draftText: input, draftImages: drafts.readyIds.length, model, maxTokens });
   const streaming = thread.phase === 'streaming';
+  const onStreamingChangeRef = useRef(onStreamingChange); onStreamingChangeRef.current = onStreamingChange;
+  const wasStreamingRef = useRef(streaming);
+  useEffect(() => {
+    if (wasStreamingRef.current === streaming) return;
+    wasStreamingRef.current = streaming;
+    onStreamingChangeRef.current?.(streaming);
+  }, [streaming]);
 
   // A chat whose detail is still loading has no settings, no model and no
   // context yet, so a send would race the load — it reads as "no chat picked"
   // for as long as that lasts (which is also why it reuses that reason).
   const disabledReason = !thread.chat || thread.phase === 'loading'
-    ? 'Create or pick a chat'
+    ? labels.composer.pickChat
     : !model
-      ? 'Model is not loaded'
+      ? labels.composer.modelNotLoaded
       : meter.state === 'full'
-        ? 'Context window is full — fork to continue'
+        ? labels.composer.contextFull
         : budget?.blocked_until
-          ? 'Budget exhausted'
+          ? labels.composer.budgetExhausted
           : undefined;
 
   const send = useCallback(async () => {
@@ -462,16 +607,16 @@ function ChatAppInner({
       const opt = selectedScopeRef.current;
       const c = await chatsApiRef.current.create(opt ? { settings: { scope: { ...opt.scope } } } : {});
       setSelectedId(c.id);
-    } catch (e) { setActionError(errorText(e, 'Could not create the chat')); }
+    } catch (e) { setActionError(errorText(e, labelsRef.current.actionErrors.createChat)); }
   }, []);
   const renameChat = useCallback((id: string, title: string) => {
-    void chatsApiRef.current.rename(id, title).catch((e: unknown) => setActionError(errorText(e, 'Could not rename the chat')));
+    void chatsApiRef.current.rename(id, title).catch((e: unknown) => setActionError(errorText(e, labelsRef.current.actionErrors.renameChat)));
   }, []);
   const removeChat = useCallback((id: string) => {
-    void chatsApiRef.current.remove(id).catch((e: unknown) => setActionError(errorText(e, 'Could not delete the chat')));
+    void chatsApiRef.current.remove(id).catch((e: unknown) => setActionError(errorText(e, labelsRef.current.actionErrors.deleteChat)));
   }, []);
   const removeAllChats = useCallback(() => {
-    void chatsApiRef.current.removeAll().catch((e: unknown) => setActionError(errorText(e, 'Could not delete the chats')));
+    void chatsApiRef.current.removeAll().catch((e: unknown) => setActionError(errorText(e, labelsRef.current.actionErrors.deleteChats)));
   }, []);
 
   const openFork = useCallback((mode: 'fork' | 'edit', atSeq: number, text?: string) => {
@@ -495,9 +640,9 @@ function ChatAppInner({
       const atSeq = chatId === selectedIdRef.current
         ? lastForkableSeq(threadRef.current.state.messages)
         : lastForkableSeq((await adaptersRef.current.storage.getChat(chatId)).messages);
-      if (atSeq === null) { setActionError('That chat has no messages to fork yet.'); return; }
+      if (atSeq === null) { setActionError(labelsRef.current.actionErrors.nothingToFork); return; }
       setForkReq({ mode: 'fork', atSeq, chatId });
-    } catch (e) { setActionError(errorText(e, 'Could not fork the chat')); }
+    } catch (e) { setActionError(errorText(e, labelsRef.current.actionErrors.forkChat)); }
   }, []);
   const onSidebarFork = useCallback((chatId: string) => { void forkWhole(chatId); }, [forkWhole]);
   const forkCurrent = useCallback(() => {
@@ -514,7 +659,7 @@ function ChatAppInner({
       // the dialog closes either way: leaving it open with no explanation
       // reads as a frozen button
       setForkReq(null);
-      setActionError(errorText(e, 'Could not fork the chat'));
+      setActionError(errorText(e, labelsRef.current.actionErrors.forkChat));
     }
   }, [forkReq]);
 
@@ -535,7 +680,7 @@ function ChatAppInner({
       // the dragover handler only ever prevents the default for `Files`, so
       // anything arriving here is a file drop
       e.preventDefault();
-      setActionError(attachReasonRef.current ?? NO_VISION_REASON);
+      setActionError(attachReasonRef.current ?? labelsRef.current.composer.noVision);
       return;
     }
     draftsRef.current.acceptDrop(e);
@@ -544,7 +689,7 @@ function ChatAppInner({
     // a plain text paste must still reach the textarea untouched
     if (!pasteHasImage(e)) return false;
     e.preventDefault();
-    setActionError(attachReasonRef.current ?? NO_VISION_REASON);
+    setActionError(attachReasonRef.current ?? labelsRef.current.composer.noVision);
     return true;
   }, []);
   const onPaste = useCallback((e: ReactClipboardEvent) => {
@@ -595,19 +740,19 @@ function ChatAppInner({
     if (hostBranch) { hostBranch(messageId, quote); return; }
     const chatId = selectedIdRef.current;
     const m = threadRef.current.state.messages.find((x) => x.id === messageId);
-    if (!chatId || !m || !isForkable(m.seq)) { setActionError('That message cannot be branched from yet.'); return; }
+    if (!chatId || !m || !isForkable(m.seq)) { setActionError(labelsRef.current.actionErrors.cannotBranch); return; }
     try {
       const c = await chatsApiRef.current.fork(chatId, m.seq);
       setSelectedId(c.id);
       // the new chat's composer starts with the passage quoted
       stageQuote(quote, { chip: false });
-    } catch (e) { setActionError(errorText(e, 'Could not branch the chat')); }
+    } catch (e) { setActionError(errorText(e, labelsRef.current.actionErrors.branchChat)); }
   }, [hostBranch, stageQuote]);
   const onBranchFrom = useCallback((messageId: string, quote: Quote) => { void branchFrom(messageId, quote); }, [branchFrom]);
 
   const changeSettings = useCallback((patch: { model?: string; settings?: Partial<ChatSettings> }) => {
     settingsPatchRef.current = threadRef.current.updateSettings(patch)
-      .catch((e: unknown) => setActionError(errorText(e, 'Could not update the chat settings')));
+      .catch((e: unknown) => setActionError(errorText(e, labelsRef.current.actionErrors.updateSettings)));
   }, []);
   // The not-loaded banner's recovery (#240): switch the chat to a loaded
   // model, or open the panel where the picker lists them.
@@ -620,25 +765,57 @@ function ChatAppInner({
     const c = threadRef.current.chat;
     if (!c) return;
     try { await adaptersRef.current.storage.putDefaults({ model: c.model, settings: c.settings }); }
-    catch (e) { setActionError(errorText(e, 'Could not save the defaults')); }
+    catch (e) { setActionError(errorText(e, labelsRef.current.actionErrors.saveDefaults)); }
   }, []);
+
+  const closeDrawer = () => {
+    // focus goes back to the button that opened it, not to <body>
+    if (drawerRef.current?.contains(document.activeElement)) drawerToggleRef.current?.focus();
+    setDrawerOpen(false);
+  };
+  const sidebarProps = {
+    chats: chatsApi.chats, selectedId,
+    onRename: renameChat, onDelete: removeChat, onDeleteAll: removeAllChats, onFork: onSidebarFork,
+    // A chat with no model behind it can never be sent to; browsing the
+    // ones that already exist stays available.
+    canCreate: models.length > 0, createDisabledReason: labels.loadModelFirst,
+    capabilities, currentUserId,
+    scopeOptions, selectedScopeId, onScopeChange: setSelectedScopeId,
+    rootInertId,
+  };
+  // Escape closes the compact layout's own overlays, the drawer first. Not
+  // for a key that already did something (the rename field, the selection
+  // menu) or one pressed inside a dialog — portals bubble through the React
+  // tree, so a confirm dialog's Escape arrives here too, and must close only
+  // the dialog.
+  const onRootKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key !== 'Escape' || e.defaultPrevented || !compact) return;
+    if ((e.target as Element).closest?.('[data-modal-overlay]')) return;
+    if (drawerOpen) { e.preventDefault(); closeDrawer(); return; }
+    if (settingsOpen) { e.preventDefault(); setSettingsOpen(false); }
+  };
 
   return (
     // `relative` is load-bearing: <SettingsPanel> becomes an `absolute`
-    // overlay below `md`, and it must resolve against this root, not the page.
-    // The host's `className` comes last so it can override anything but that.
-    <div className={cn('relative flex overflow-hidden', className)} onPaste={onPasteAnywhere}>
-      <ChatSidebar
-        chats={chatsApi.chats} selectedId={selectedId} collapsed={sidebarCollapsed}
-        onToggle={() => setSidebarCollapsed((v) => !v)} onSelect={setSelectedId} onNew={() => void newChat()}
-        onRename={renameChat} onDelete={removeChat} onDeleteAll={removeAllChats} onFork={onSidebarFork}
-        // A chat with no model behind it can never be sent to; browsing the
-        // ones that already exist stays available.
-        canCreate={models.length > 0} createDisabledReason={labels.loadModelFirst}
-        capabilities={capabilities} currentUserId={currentUserId}
-        scopeOptions={scopeOptions} selectedScopeId={selectedScopeId} onScopeChange={setSelectedScopeId}
-        labels={labels} rootInertId={rootInertId}
-      />
+    // overlay below `md` (and always in the compact layout), and the drawer is
+    // one too; both must resolve against this root, not the page. The host's
+    // `className` comes last so it can override anything but that.
+    <div ref={rootRef} className={cn('relative flex overflow-hidden', className)} onPaste={onPasteAnywhere} onKeyDown={onRootKeyDown}
+      data-chat-layout={compact ? 'compact' : 'full'}>
+      {!compact && (
+        <ChatSidebar {...sidebarProps} collapsed={railCollapsed} onToggle={toggleRail}
+          onSelect={setSelectedId} onNew={() => void newChat()} />
+      )}
+      {compact && drawerOpen && (
+        <>
+          <div className="absolute inset-0 z-20 bg-chat-page/60" onClick={closeDrawer} aria-hidden data-chat-overlay="" />
+          <div ref={drawerRef} className="absolute inset-y-0 left-0 z-30 flex max-w-[85%] overflow-hidden bg-chat-page shadow-xl" data-chat-overlay="">
+            <ChatSidebar {...sidebarProps} collapsed={false} onToggle={closeDrawer}
+              onSelect={(id) => { setSelectedId(id); closeDrawer(); }}
+              onNew={() => { closeDrawer(); void newChat(); }} />
+          </div>
+        </>
+      )}
       <SelectionScope
         on={selectionOn} prefs={selectionPrefs} onQuote={stageQuote} onSend={sendNow} onPrefill={prefill}
         canSend={!disabledReason && !streaming} onBranchFrom={onBranchFrom} messages={thread.state.messages}
@@ -646,25 +823,31 @@ function ChatAppInner({
         touchMode={selOpts?.touchMode} labels={selOpts?.labels}
       >
       <section className="relative flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center gap-3 border-b border-chat-rule px-4 py-2">
+        <header className={cn('flex items-center border-b border-chat-rule py-2', compact ? 'gap-2 px-2' : 'gap-3 px-4')}>
+          {compact && (
+            <Button ref={drawerToggleRef} variant="ghost" size="sm" aria-label={labels.widget.showChats} aria-expanded={drawerOpen}
+              onClick={() => setDrawerOpen((v) => !v)}>
+              <PanelLeftOpen className="h-4 w-4" aria-hidden />
+            </Button>
+          )}
           <h1 className="flex min-w-0 items-baseline gap-1.5 font-mono text-sm text-chat-fg">
-            <span className="truncate">{thread.chat?.title ?? 'Chat'}</span>
+            <span className="truncate">{thread.chat?.title ?? labels.header.untitledChat}</span>
             {/* the auto-titler reassesses periodically; showing what the chat
                 used to be called keeps it recognisable after it renames itself */}
             {thread.chat?.title_prev && (
-              <span className="min-w-0 shrink truncate text-xs text-chat-dim" title={"was: " + thread.chat.title_prev}>
-                (was: {thread.chat.title_prev})
+              <span className="min-w-0 shrink truncate text-xs text-chat-dim" title={labels.header.previousTitleTooltip(thread.chat.title_prev)}>
+                {labels.header.previousTitle(thread.chat.title_prev)}
               </span>
             )}
           </h1>
-          <div className="ml-auto flex items-center gap-4">
-            <ContextBar meter={meter} />
-            {budget && <BudgetMeter budget={budget} />}
+          <div className={cn('ml-auto flex shrink-0 items-center', compact ? 'gap-2' : 'gap-4')}>
+            <ContextBar meter={meter} compact={compact} />
+            {budget && <BudgetMeter budget={budget} compact={compact} />}
             {/* `settings: 'hidden'` removes the affordance AND the panel below;
                 `settingsOpen` simply never leaves `false`. Nothing else in the
                 header, sidebar or thread is conditioned on it. */}
             {capabilities.settings !== 'hidden' && (
-              <Button variant="ghost" size="sm" aria-label="Settings" onClick={() => setSettingsOpen((v) => !v)}>
+              <Button variant="ghost" size="sm" aria-label={labels.header.settings} onClick={() => setSettingsOpen((v) => !v)}>
                 <Settings2 className="h-4 w-4" aria-hidden />
               </Button>
             )}
@@ -675,7 +858,7 @@ function ChatAppInner({
             state={thread.state} attachments={thread.attachments} isStreaming={streaming} turnInFlight={streaming}
             maxTokens={maxTokens} onRegenerate={onRegenerate} onForkHere={onForkHere} onEdit={onEdit}
             onPick={onPick} onRetry={onRetry} onOpenImage={setLightbox} onDropFiles={onDropFiles}
-            reasoningOpen={reasoningOpen} onReasoningToggle={onReasoningToggle} labels={labels}
+            reasoningOpen={reasoningOpen} onReasoningToggle={onReasoningToggle}
           />
         </div>
         <div className="space-y-2 border-t border-chat-rule p-3">
@@ -699,7 +882,7 @@ function ChatAppInner({
             onAddFiles={onAddFiles} onRemoveDraft={onRemoveDraft} onPaste={onPaste}
             capabilities={capabilities} focusKey={selectedId}
             quotes={selectionOn ? quotes : undefined} onRemoveQuote={selectionOn ? removeQuote : undefined}
-            focusSignal={focusSignal}
+            focusSignal={focusSignal} compact={compact}
           />
         </div>
       </section>
@@ -710,6 +893,7 @@ function ChatAppInner({
           capabilities={capabilities} onChange={changeSettings} onSaveDefaults={saveDefaults}
           selectionPrefs={selectionOn ? selectionPrefs : undefined}
           onSelectionPrefsChange={selectionOn ? onSelectionPrefsChange : undefined}
+          overlay={compact}
         />
       )}
       {forkReq && (

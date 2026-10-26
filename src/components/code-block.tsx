@@ -10,6 +10,7 @@ import { getHighlighter, getLoadedHighlighter, resolveLang } from '../model/shik
 import { linkifyCode } from './linkify';
 import { sanitizeHastToHtml, sanitizeHastToHtmlSync } from '../model/sanitize-schema';
 import { useSelectionActions } from './selection/context';
+import { useChatLabels } from '../app/labels-context';
 
 /**
  * Where a code block's fold choice lives, so it outlives the component.
@@ -83,6 +84,7 @@ const useIsoLayoutEffect = typeof window === 'undefined' ? useEffect : useLayout
 export function CodeBlock({ code, lang, blockIndex }: { code: string; lang?: string; blockIndex?: number }) {
   const theme = useChatTheme();
   const sel = useSelectionActions();
+  const { labels: { codeBlock: l } } = useChatLabels();
   const scope = useContext(CodeBlockScope);
   const [copied, setCopied] = useState(false);
   const [expanded, setExpanded] = useFold(blockIndex);
@@ -158,7 +160,7 @@ export function CodeBlock({ code, lang, blockIndex }: { code: string; lang?: str
   return (
     <div className="group relative my-2 rounded-[0.25rem] border border-chat-rule bg-chat-page" data-code-block="" data-lang={lang ?? ''}>
       <div data-selection-ignore="" className="flex select-none items-center justify-between border-b border-chat-rule px-2 py-1 font-mono text-[11px] text-chat-dim">
-        <span>{lang ?? 'text'}</span>
+        <span>{lang ?? l.plainText}</span>
         <span className="flex items-center gap-1">
         {sel && (
           <button
@@ -175,7 +177,7 @@ export function CodeBlock({ code, lang, blockIndex }: { code: string; lang?: str
         )}
         <button
           type="button"
-          aria-label="Copy code"
+          aria-label={l.copyCode}
           className="rounded-[0.25rem] px-1 text-chat-muted hover:text-chat-accent"
           onClick={() => {
             void copyToClipboard(code)
@@ -216,7 +218,7 @@ export function CodeBlock({ code, lang, blockIndex }: { code: string; lang?: str
           className="w-full select-none border-t border-chat-rule py-1 text-xs text-chat-accent-strong hover:text-chat-accent"
           onClick={() => setExpanded(!expanded)}
         >
-          {expanded ? 'Collapse' : 'Show all'}
+          {expanded ? l.collapse : l.showAll}
         </button>
       )}
     </div>

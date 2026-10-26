@@ -4,6 +4,7 @@ import { ZoomIn, ZoomOut } from 'lucide-react';
 import { Modal } from '@/ui/modal';
 import { useOptionalAdapters } from '../adapters/context';
 import type { AttachmentOut } from '../adapters/types';
+import { useChatLabels } from '../app/labels-context';
 
 // Shows the raster via its signed URL through the shared `Modal` (focus
 // trap/restore, Escape-to-close, backdrop click) — no "open in new tab"
@@ -38,6 +39,7 @@ const clampZoom = (z: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z));
 
 export function Lightbox({ attachment, onClose, rootInertId }: LightboxProps) {
   const adapters = useOptionalAdapters();
+  const { labels: { lightbox: l }, format } = useChatLabels();
   const [zoom, setZoom] = useState(1);
   const [dragging, setDragging] = useState(false);
   const viewportRef = useRef<HTMLDivElement | null>(null);
@@ -103,11 +105,11 @@ export function Lightbox({ attachment, onClose, rootInertId }: LightboxProps) {
 
   const dims = attachment.width && attachment.height ? `${attachment.width}×${attachment.height} · ` : '';
   return (
-    <Modal open onClose={onClose} title="Image preview" size="lg" rootInertId={rootInertId}>
+    <Modal open onClose={onClose} title={l.title} size="lg" rootInertId={rootInertId}>
       <div
         ref={setViewport}
         tabIndex={0}
-        aria-label="Image viewport — scroll to zoom, drag to pan"
+        aria-label={l.viewport}
         className={`max-h-[70vh] overflow-auto rounded-[0.25rem] focus:[outline:none] focus:ring-1 focus:ring-chat-accent ${
           zoom > 1 ? (dragging ? 'cursor-grabbing' : 'cursor-grab') : ''
         }`}
@@ -139,14 +141,14 @@ export function Lightbox({ attachment, onClose, rootInertId }: LightboxProps) {
         />
       </div>
       <div className="mt-2 flex items-center gap-2 text-xs text-chat-dim">
-        <span>{dims}{(attachment.size_bytes / 1024).toFixed(0)} kB</span>
+        <span>{dims}{l.size(Math.round(attachment.size_bytes / 1024), format.fixed(attachment.size_bytes / 1024, 0))}</span>
         <span className="ml-auto flex items-center gap-1">
-          <button type="button" aria-label="Zoom out" disabled={zoom <= MIN_ZOOM} onClick={() => stepTo(-1)}
+          <button type="button" aria-label={l.zoomOut} disabled={zoom <= MIN_ZOOM} onClick={() => stepTo(-1)}
             className="rounded-[0.25rem] p-1 text-chat-muted hover:text-chat-accent disabled:opacity-40">
             <ZoomOut className="h-4 w-4" aria-hidden />
           </button>
-          <span className="w-10 text-center font-mono">{Math.round(zoom * 100)}%</span>
-          <button type="button" aria-label="Zoom in" disabled={zoom >= MAX_ZOOM} onClick={() => stepTo(1)}
+          <span className="w-10 text-center font-mono">{format.percent(zoom)}</span>
+          <button type="button" aria-label={l.zoomIn} disabled={zoom >= MAX_ZOOM} onClick={() => stepTo(1)}
             className="rounded-[0.25rem] p-1 text-chat-muted hover:text-chat-accent disabled:opacity-40">
             <ZoomIn className="h-4 w-4" aria-hidden />
           </button>

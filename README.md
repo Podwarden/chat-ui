@@ -71,6 +71,11 @@ multiple-choice selector, a message with an image attachment, a chat forked
 mid-conversation, and a markdown-and-math showcase, each with a title an
 actual user would give it.
 
+The demo also has [the widget](https://podwarden.github.io/chat-ui/?view=widget&seed=demo)
+on a stand-in host page, and [a German catalog](https://podwarden.github.io/chat-ui/?locale=de&seed=demo)
+(`?locale=de`, from
+[`examples/basic/src/labels-de.ts`](examples/basic/src/labels-de.ts)).
+
 This is the fastest way to see the library working end to end, and it is also
 the **reference implementation** for wiring it into a product:
 `Transport.sendTurn(req, onEvent, signal)` delivers every event this demo
@@ -146,8 +151,24 @@ into your own app with no attribution obligations.
     <img alt="The settings panel: model select, temperature, max tokens, top p, system prompt, and a tools checklist" src="docs/assets/settings-light.png" width="900">
   </picture>
 
+- **Selection actions**: select any text in a reply and a menu offers Copy,
+  Quote (into the message box, or as a chip), Explain, Ask about it, Translate
+  and Branch into a new chat. On a touch screen it docks above the composer
+  instead.
+
+- **A widget for every page**: `<ChatWidget>` puts the same chat behind a
+  bottom-corner launcher in a pop-up panel, the way support chats work, with
+  its dialogs kept inside the panel and a full-screen panel on a phone. In any
+  box narrower than 640 px `<ChatApp>` goes compact by itself: the chat list
+  becomes a drawer and settings an overlay.
+
 - **Theming** through 17 semantic `--chat-*` tokens and a Tailwind preset, so
   a host restyles the whole UI without overriding a single component.
+- **Localisable**: every string it renders, including `aria-label`s, toasts and
+  screen-reader announcements, is set through one typed `labels` prop
+  (English defaults, merged per group), and a `locale` prop drives number,
+  price and date formatting and the language names in Translate. Plurals go
+  through the host's own i18n library or the exported `selectPlural`.
 
 ## Used in production
 

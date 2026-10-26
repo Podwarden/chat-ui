@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Button } from '@/ui/button';
 import type { Part } from '../model/message';
+import { useChatLabels } from '../app/labels-context';
 
 type OptionsPart = Extract<Part, { type: 'options' }>;
 
@@ -15,11 +16,12 @@ export function OptionsButtons({
   disabled: boolean;
   onPick: (selected: string[]) => void;
 }) {
+  const { labels: { options: l } } = useChatLabels();
   const [picked, setPicked] = useState<string[]>([]);
   const answered = part.answered;
   const isDisabled = disabled || answered !== undefined;
   return (
-    <div className="my-2" role="group" aria-label={part.question ?? 'Options'}>
+    <div className="my-2" role="group" aria-label={part.question ?? l.groupLabel}>
       {part.question && <div className="mb-1 text-xs text-chat-muted">{part.question}</div>}
       <div className="flex flex-wrap gap-2">
         {part.options.map((o) => {
@@ -42,7 +44,7 @@ export function OptionsButtons({
         })}
         {part.multi && !answered && (
           <Button size="sm" disabled={isDisabled || picked.length === 0} onClick={() => onPick(picked)}>
-            Confirm
+            {l.confirm}
           </Button>
         )}
       </div>

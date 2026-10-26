@@ -4,6 +4,110 @@ All notable changes to `@podwarden/chat-ui`. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are semver,
 and each release is cut as a `vX.Y.Z` git tag.
 
+## [0.1.27] - 2026-10-26
+
+### Added
+
+- **`<ChatWidget>`**: the chat as a bottom-corner launcher button and pop-up
+  panel, for every page of a host (Podwarden/chat-ui#1). `open` /
+  `defaultOpen` / `onOpenChange`, `position`, `width`, `height`, `offset`,
+  `zIndex`, `title`, `fullPageHref` ("Open full page"), and `fullScreenBelow`
+  (the open panel fills the screen below that viewport width, 640 px by
+  default). The chat mounts on the first open and stays mounted while closed,
+  so a reply keeps streaming; the launcher shows it is answering, then marks
+  the finished reply until the next open. Escape closes the panel after the
+  chat's own dialogs and overlays, and focus returns to the launcher. Its
+  dialogs portal into the panel. `syncUrlParam` defaults to `null` here.
+- **`<ChatApp layout>`**: `'auto'` (default) goes compact below 640 px of the
+  root's own width (`COMPACT_BELOW_PX`, measured with a ResizeObserver);
+  `'widget'` is always compact; `'full'` never is. Compact: the chat list is a
+  drawer over the transcript that starts closed and closes on a pick or
+  Escape, settings is an overlay whatever the viewport, the header meters drop
+  their figures to screen-reader text, and the composer shows the new
+  `composer.compactPlaceholder`.
+- **`<ChatApp chatId>`**: the open chat, controlled. Later changes are
+  honoured without a remount and are not echoed through `onChatIdChange`; the
+  user's own switches still are. Wins over `initialChatId`.
+- **`sidebarCollapsed`, `defaultSidebarCollapsed`, `onSidebarCollapsedChange`**
+  for the full layout's chat-list rail.
+- **`portalContainer`**: where dialogs and the lightbox portal to. Inside a
+  container they are `absolute` against it, leave the page's scroll alone, and
+  make the container's other children inert instead of `#app-root`.
+- **`onStreamingChange`**: called when a reply starts and stops streaming.
+- **`suspended`**: the chat is out of sight but mounted; its dialogs render
+  closed (nothing left inert, no key listener left on the page) and come back
+  with it. `<ChatWidget>` sets it while the panel is closed.
+- **Labels:** the `widget` group (`open`, `close`, `title`, `openFullPage`,
+  `answering`, `unread`, `showChats`) and `composer.compactPlaceholder`.
+- **Exports:** `ChatWidget` and `ChatWidgetProps`.
+- **Demo:** `?view=widget` (the widget on a stand-in host page),
+  `?locale=de` (a German catalog), and `?select=<text>` (selects that text, so
+  the selection menu can be shown without a mouse).
+
+### Fixed
+
+- A dialog whose `rootInertId` element contains the place it portals to is no
+  longer made inert along with that element.
+- The sidebar's rename field marks Enter and Escape as handled
+  (`preventDefault`), so a key listener on `document` — where React's own
+  listener sits under Next.js's `hydrateRoot(document)` — can tell.
+
+### Unchanged
+
+- A host that sets none of the new props gets the 0.1.26 layout wherever its
+  `<ChatApp>` is 640 px wide or more, and wherever ResizeObserver is missing.
+  Dialogs still portal to `document.body`.
+
+## [0.1.26] - 2026-10-25
+
+### Added
+
+- **Every visible string is settable by the host.** `<ChatApp labels>` now takes
+  the whole `ChatUiLabels` set — 234 strings in groups (`composer`,
+  `message`, `codeBlock`, `markdown`, `sidebar`, `settings`, `banners`,
+  `actionErrors`, `errors`, `thread`, `prompts`, `selection`,
+  `selectionPhrases`, …) covering text, `aria-label`s, tooltips, placeholders,
+  toasts, screen-reader announcements and the footnote heading and back-links
+  in the model's Markdown. Groups merge key by key over the English
+  `DEFAULT_LABELS`; labels with a value in them are functions that get the raw
+  number and the number formatted for `locale`. A value whose type differs
+  from the default's (`undefined`, `null`, a string where a function belongs)
+  is skipped, so an untyped runtime catalog cannot crash the tree. This
+  includes the Explain and Translate instruction lines (`prompts`), the code
+  block's Show all / Collapse / Copy code, and the branch errors, none of which
+  a host could set in 0.1.25.
+- **`selectionPhrases`** returns the three selection texts built around a
+  value (the Translate item, a quote chip's remove button, the first-time
+  announcement) as whole texts, for languages with another word order. The
+  defaults build them from the `selection` strings exactly as before.
+- **`<ChatApp locale>`.** Language names in Translate are shown in that locale
+  (`Intl.DisplayNames`, English without it) and its language is offered first;
+  numbers, prices and dates are formatted with `Intl` in it. `ru_RU` is read
+  as `ru-RU`; an empty or invalid tag counts as no locale.
+- **The delete-all confirmation word** is `sidebar.deleteAllWord`; a blank one
+  falls back to the default, so an untranslated key cannot arm "Delete
+  everything" with nothing typed.
+- **`createHttpAdapters({ messages })`** sets the two error messages the HTTP
+  adapter writes itself (`noResponseBody`, `networkError`); English by default.
+- **Exports:** `DEFAULT_LABELS`, `mergeLabels`, `ChatLabelsProvider`,
+  `useChatLabels`, `selectPlural` (CLDR plural forms via `Intl.PluralRules`),
+  `languageName`, and the `ChatUiLabels`, `ChatUiLabelOverrides`, `CountLabel`,
+  `ChatLabelsValue`, `Formatters` and `PluralForms` types.
+  `buildTranslatePrompt` takes an optional instruction function.
+
+### Changed
+
+- `selectionActions.labels` skips `undefined` values, as `labels` does. In
+  0.1.25 an `undefined` key replaced the label and left the control without a
+  name.
+
+### Unchanged
+
+- With no `labels` and no `locale` the UI renders the same English, formatted
+  the same way, as 0.1.25. `labels` as a `Partial<Labels>` (the seven 0.1.x
+  keys) and `selectionActions.labels` work as before; the latter wins over
+  `labels.selection` key by key. `SelectionLabels` keeps its 28 keys.
+
 ## [0.1.25] - 2026-10-23
 
 ### Added

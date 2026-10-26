@@ -1,7 +1,8 @@
 import tseslint from 'typescript-eslint';
 import reactHooks from 'eslint-plugin-react-hooks';
 export default tseslint.config(
-  { ignores: ['dist/**', 'node_modules/**', 'publish/**'] },
+  // unanchored: a built examples/basic/dist must not be linted either
+  { ignores: ['**/dist/**', '**/node_modules/**', 'publish/**'] },
   ...tseslint.configs.recommended,
   {
     files: ['**/*.{ts,tsx}'],

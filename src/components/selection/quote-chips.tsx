@@ -2,7 +2,8 @@
 
 import { Code2, Quote as QuoteIcon, X } from 'lucide-react';
 import { quotePreview, type Quote } from '../../model/selection';
-import { DEFAULT_SELECTION_LABELS, useSelectionActions } from './context';
+import { useSelectionActions } from './context';
+import { useChatLabels } from '../../app/labels-context';
 
 export interface QuoteChipsProps {
   quotes: readonly Quote[];
@@ -18,7 +19,8 @@ export interface QuoteChipsProps {
  */
 export function QuoteChips({ quotes, onRemove, onReveal }: QuoteChipsProps) {
   const ctx = useSelectionActions();
-  const labels = ctx?.labels ?? DEFAULT_SELECTION_LABELS;
+  const { selection: fallback, selectionPhrases: phrases } = useChatLabels().labels;
+  const labels = ctx?.labels ?? fallback;
   if (quotes.length === 0) return null;
   const reveal = onReveal ?? ctx?.revealQuote;
   return (
@@ -36,7 +38,7 @@ export function QuoteChips({ quotes, onRemove, onReveal }: QuoteChipsProps) {
             {q.kind === 'code' && q.lang ? <span className="mr-1 font-mono text-chat-dim">{q.lang}</span> : null}
             {quotePreview(q.text)}
           </button>
-          <button type="button" aria-label={`${labels.removeQuote}: ${quotePreview(q.text, 40)}`} onClick={() => onRemove(q.id)}
+          <button type="button" aria-label={phrases.removeQuote(quotePreview(q.text, 40), labels.removeQuote)} onClick={() => onRemove(q.id)}
             className="shrink-0 rounded-[0.25rem] p-1 text-chat-dim hover:text-chat-accent">
             <X className="h-3 w-3" aria-hidden />
           </button>

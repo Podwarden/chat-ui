@@ -1,7 +1,7 @@
 'use client';
 
 import { isValidElement, memo, useMemo, type ReactNode } from 'react';
-import ReactMarkdown, { type Components } from 'react-markdown';
+import ReactMarkdown, { type Components, type Options as ReactMarkdownOptions } from 'react-markdown';
 import type { PluggableList } from 'unified';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -23,6 +23,7 @@ import {
 import type { Element, Root } from 'hast';
 import { visit } from 'unist-util-visit';
 import { CodeBlock, CodeBlockScope } from './code-block';
+import { useChatLabels } from '../app/labels-context';
 
 /**
  * The single place react-markdown is imported.
@@ -153,13 +154,22 @@ export const Markdown = memo(function Markdown({
   // (see model/math-delimiters.ts). Raw-text rewrite, so it happens before the
   // markdown parse; memoised with the same reasoning as the parse itself.
   const normalized = useMemo(() => normalizeMathDelimiters(text), [text]);
+  // GFM footnotes: remark-rehype writes an sr-only heading and a name on each
+  // back-link, in English unless told otherwise.
+  const { labels: { markdown: ml }, format } = useChatLabels();
+  const remarkRehypeOptions = useMemo<ReactMarkdownOptions['remarkRehypeOptions']>(() => ({
+    footnoteLabel: ml.footnotes,
+    // remark-rehype counts references from 0 and repeat references from 1
+    footnoteBackLabel: (referenceIndex: number, rereferenceIndex: number) =>
+      ml.backToReference(referenceIndex + 1, format.count(referenceIndex + 1), rereferenceIndex),
+  }), [ml, format]);
   return (
     <div
       data-streaming={streaming ? 'true' : undefined}
       className="chat2-md max-w-none text-[14px] leading-relaxed text-chat-fg [&_a]:text-chat-accent-strong [&_a:hover]:text-chat-accent [&_blockquote]:border-l-2 [&_blockquote]:border-chat-rule [&_blockquote]:pl-3 [&_h1]:text-lg [&_h2]:text-base [&_h3]:text-sm [&_li]:my-0.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-2 [&_pre]:my-2 [&_pre]:overflow-x-auto [&_table]:my-2 [&_table]:border-collapse [&_td]:border [&_td]:border-chat-rule [&_td]:px-2 [&_th]:border [&_th]:border-chat-rule [&_th]:px-2 [&_ul]:list-disc [&_ul]:pl-5"
     >
       <CodeBlockScope.Provider value={blockScope}>
-        <ReactMarkdown remarkPlugins={REMARK_PLUGINS} rehypePlugins={plugins} components={COMPONENTS}>
+        <ReactMarkdown remarkPlugins={REMARK_PLUGINS} remarkRehypeOptions={remarkRehypeOptions} rehypePlugins={plugins} components={COMPONENTS}>
           {normalized}
         </ReactMarkdown>
       </CodeBlockScope.Provider>

@@ -14,7 +14,18 @@
 // `@podwarden/chat-ui/contract`.
 export { ChatApp } from './app/chat-app';
 export type { ChatAppProps, SelectionActionsOptions } from './app/chat-app';
-export type { Labels } from './app/labels';
+// The same chat as a launcher button and pop-up panel, for every page of a host.
+export { ChatWidget } from './app/chat-widget';
+export type { ChatWidgetProps } from './app/chat-widget';
+// Every visible string (`labels`) and the locale numbers, dates and language
+// names follow (`locale`). The provider and hook are for hosts that assemble
+// their own layout from the components below.
+export { DEFAULT_LABELS, mergeLabels } from './app/labels';
+export type { Labels, ChatUiLabels, ChatUiLabelOverrides, CountLabel } from './app/labels';
+export { ChatLabelsProvider, useChatLabels } from './app/labels-context';
+export type { ChatLabelsValue } from './app/labels-context';
+export { selectPlural } from './app/format';
+export type { PluralForms, Formatters } from './app/format';
 
 export { AdaptersProvider, useAdapters, useOptionalAdapters } from './adapters/context';
 export { DEFAULT_CAPABILITIES } from './adapters/capabilities';
@@ -44,7 +55,7 @@ export type { SelectionLabels, SelectionActionsContextValue } from './components
 export {
   MAX_QUOTES, PROMPTS, DEFAULT_QUICK_ACTIONS, TRANSLATE_LANGUAGES,
   toBlockquote, toFence, quoteToMarkdown, serializeQuotes, appendQuoteToDraft,
-  buildExplainPrompt, buildAskPrompt, buildTranslatePrompt, buildInstructionPrompt,
+  buildExplainPrompt, buildAskPrompt, buildTranslatePrompt, buildInstructionPrompt, languageName,
 } from './model/selection';
 export type { Quote, QuoteSource, QuickAction } from './model/selection';
 export { DEFAULT_SELECTION_PREFS, readSelectionPrefs, writeSelectionPrefs } from './model/prefs';

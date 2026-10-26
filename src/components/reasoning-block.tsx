@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Brain, ChevronDown, ChevronRight } from 'lucide-react';
 import type { Part } from '../model/message';
+import { useChatLabels } from '../app/labels-context';
 
 type ReasoningPart = Extract<Part, { type: 'reasoning' }>;
 
@@ -32,12 +33,14 @@ export function ReasoningBlock({ part, isNewest, streaming, preferOpen, onUserTo
   preferOpen: boolean;
   onUserToggle: (open: boolean) => void;
 }) {
+  const { labels: { reasoning: l }, format } = useChatLabels();
   const live = preferOpen && isNewest && streaming && part.durationMs === undefined;
   const [open, setOpen] = useState(live);
   useEffect(() => {
     setOpen(live);
   }, [live]);
-  const label = part.durationMs !== undefined ? `Thought for ${Math.max(1, Math.round(part.durationMs / 1000))} s` : 'Thinking…';
+  const seconds = part.durationMs !== undefined ? Math.max(1, Math.round(part.durationMs / 1000)) : null;
+  const label = seconds !== null ? l.thoughtFor(seconds, format.count(seconds)) : l.thinking;
   return (
     <div className="my-1 rounded-[0.25rem] border border-chat-rule bg-chat-surface/50 text-xs">
       <button
@@ -55,7 +58,7 @@ export function ReasoningBlock({ part, isNewest, streaming, preferOpen, onUserTo
       {open && (
         <pre
           className="select-none whitespace-pre-wrap px-3 pb-2 font-mono text-[12px] text-chat-dim"
-          aria-label="model reasoning"
+          aria-label={l.ariaLabel}
           onCopy={(e) => e.preventDefault()}
         >
           {part.text}

@@ -3,6 +3,7 @@
 import { ImageOff } from 'lucide-react';
 import { useOptionalAdapters } from '../adapters/context';
 import type { AttachmentOut } from '../adapters/types';
+import { useChatLabels } from '../app/labels-context';
 
 /**
  * Renders an image attachment by its signed URL, or an "image expired"
@@ -32,6 +33,7 @@ export function AttachmentImage({
   className?: string;
 }) {
   const adapters = useOptionalAdapters();
+  const { labels: { attachments: l } } = useChatLabels();
   const url = attachment ? (adapters ? adapters.storage.attachmentUrl(attachment) : attachment.url) : null;
   if (!attachment || attachment.evicted || url === null) {
     const w = attachment?.width ?? 4;
@@ -42,7 +44,7 @@ export function AttachmentImage({
         style={{ aspectRatio: `${w} / ${h}` }}
         className={`flex max-w-xs items-center justify-center rounded-[0.25rem] border border-dashed border-chat-rule bg-chat-surface/50 text-xs text-chat-dim ${className ?? ''}`}
       >
-        <ImageOff className="mr-1 h-4 w-4" aria-hidden /> image expired
+        <ImageOff className="mr-1 h-4 w-4" aria-hidden /> {l.imageExpired}
       </div>
     );
   }
@@ -51,7 +53,7 @@ export function AttachmentImage({
     // friendly; a plain <img> matches the existing pattern in godmode-media.tsx.
     <img
       src={url}
-      alt="attached image"
+      alt={l.imageAlt}
       width={attachment.width ?? undefined}
       height={attachment.height ?? undefined}
       loading="lazy"
@@ -61,7 +63,7 @@ export function AttachmentImage({
     />
   );
   return onOpen ? (
-    <button type="button" aria-label="Open image" onClick={() => onOpen(attachment)} className="block">
+    <button type="button" aria-label={l.openImage} onClick={() => onOpen(attachment)} className="block">
       {img}
     </button>
   ) : (

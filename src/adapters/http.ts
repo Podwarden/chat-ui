@@ -19,12 +19,29 @@ const RETRYABLE = new Set<ErrorCode>(['rate_limited', 'turn_in_flight', 'timeout
  * has no opinion at all about authentication — whatever headers the host's
  * `fetch` adds are the headers that go out.
  */
-export function createHttpAdapters(opts: { baseUrl: string; fetch: Adapters['fetch'] }): Adapters {
+export function createHttpAdapters(opts: {
+  baseUrl: string;
+  fetch: Adapters['fetch'];
+  /**
+   * The two error messages this adapter writes itself (every other message is
+   * the backend's own). They are shown in the transcript under the
+   * `labels.errors.internal` heading and announced, so a localised host sets
+   * them here; English by default.
+   */
+  messages?: {
+    /** A 2xx turn response with no body to stream. Default `'no response body'`. */
+    noResponseBody?: string;
+    /** `fetch` rejected with something that is not an `Error`. Default `'network error'`. */
+    networkError?: string;
+  };
+}): Adapters {
   // Trailing slashes are normalised (all of them, not just one) so
   // `'/api/chat2/'` and `'/api/chat2'` behave identically — `id` and every
   // request path below are built from this value, never `opts.baseUrl`.
   const baseUrl = opts.baseUrl.replace(/\/+$/, '');
   const { fetch } = opts;
+  const noResponseBody = opts.messages?.noResponseBody ?? 'no response body';
+  const networkError = opts.messages?.networkError ?? 'network error';
 
   const storage: Storage = {
     listChats: () => fetch(`${baseUrl}/chats`).then(jsonOrThrow<{ chats: ChatSummary[] }>).then((r) => r.chats),
@@ -75,7 +92,7 @@ export function createHttpAdapters(opts: { baseUrl: string; fetch: Adapters['fet
       r = await fetch(url, { ...init, signal });
     } catch (err) {
       if ((err as { name?: string }).name === 'AbortError') return;
-      onEvent({ type: 'error', code: 'internal', message: err instanceof Error ? err.message : 'network error', retryable: true });
+      onEvent({ type: 'error', code: 'internal', message: err instanceof Error ? err.message : networkError, retryable: true });
       return;
     }
     if (!r.ok) {
@@ -85,7 +102,7 @@ export function createHttpAdapters(opts: { baseUrl: string; fetch: Adapters['fet
       onEvent({ type: 'error', code, message: e.message, retryable: RETRYABLE.has(code) });
       return;
     }
-    if (!r.body) { onEvent({ type: 'error', code: 'internal', message: 'no response body', retryable: true }); return; }
+    if (!r.body) { onEvent({ type: 'error', code: 'internal', message: noResponseBody, retryable: true }); return; }
     for await (const ev of parseSseStream(r.body, signal)) onEvent(ev);
   }
 

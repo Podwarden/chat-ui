@@ -4,6 +4,7 @@ import type { ClipboardEvent as ReactClipboardEvent, DragEvent as ReactDragEvent
 import { useAdapters } from '../adapters/context';
 import { ApiError, type AttachmentOut } from '../adapters/types';
 import { ALLOWED_IMAGE_MIMES, MAX_IMAGES_PER_MESSAGE, MAX_IMAGE_BYTES } from '../model/limits';
+import { useChatLabels } from '../app/labels-context';
 
 export interface Draft {
   localId: string;
@@ -14,9 +15,7 @@ export interface Draft {
   previewUrl: string;
 }
 
-const NO_CHAT = 'Pick a chat first';
-const BAD_TYPE = 'Only PNG, JPEG or WebP images are supported';
-const TOO_MANY = `Only ${MAX_IMAGES_PER_MESSAGE} images per message`;
+const MAX_IMAGE_MB = MAX_IMAGE_BYTES / 1024 ** 2;
 
 /**
  * Composer image drafts for one chat.
@@ -36,6 +35,11 @@ export function useAttachments(chatId: string | null) {
   // provider with a freshly-built Adapters object.
   const adaptersRef = useRef(adapters);
   adaptersRef.current = adapters;
+  // The error texts are written into the drafts when they happen; read
+  // through a ref so `add` keeps its identity (same reason as above).
+  const strings = useChatLabels();
+  const stringsRef = useRef(strings);
+  stringsRef.current = strings;
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const draftsRef = useRef<Draft[]>(drafts);
   draftsRef.current = drafts;
@@ -56,24 +60,26 @@ export function useAttachments(chatId: string | null) {
     const mk = (file: File): Draft => ({
       localId: crypto.randomUUID(), file, status: 'uploading', previewUrl: URL.createObjectURL(file),
     });
+    const { labels: { attachments: l }, format } = stringsRef.current;
     const accepted = files.slice(0, room).map(mk);
-    const overflow = files.slice(room).map((f) => ({ ...mk(f), status: 'error' as const, error: TOO_MANY }));
+    const tooMany = l.tooMany(MAX_IMAGES_PER_MESSAGE, format.count(MAX_IMAGES_PER_MESSAGE));
+    const overflow = files.slice(room).map((f) => ({ ...mk(f), status: 'error' as const, error: tooMany }));
     setDrafts((ds) => [...ds, ...accepted, ...overflow]);
 
     const chat = chatIdRef.current;
     for (const d of accepted) {
-      if (chat === null) { patch(d.localId, { status: 'error', error: NO_CHAT }); continue; }
+      if (chat === null) { patch(d.localId, { status: 'error', error: l.noChat }); continue; }
       if (!(ALLOWED_IMAGE_MIMES as readonly string[]).includes(d.file.type)) {
-        patch(d.localId, { status: 'error', error: BAD_TYPE });
+        patch(d.localId, { status: 'error', error: l.unsupportedType });
         continue;
       }
       if (d.file.size > MAX_IMAGE_BYTES) {
-        patch(d.localId, { status: 'error', error: `Image exceeds ${MAX_IMAGE_BYTES / 1024 ** 2} MB` });
+        patch(d.localId, { status: 'error', error: l.tooLarge(MAX_IMAGE_MB, format.count(MAX_IMAGE_MB)) });
         continue;
       }
       void adaptersRef.current.storage.uploadAttachment(d.file, chat)
         .then((a) => patch(d.localId, { status: 'ready', attachment: a, error: undefined }))
-        .catch((e: unknown) => patch(d.localId, { status: 'error', error: e instanceof ApiError ? e.message : 'Upload failed' }));
+        .catch((e: unknown) => patch(d.localId, { status: 'error', error: e instanceof ApiError ? e.message : l.uploadFailed }));
     }
   }, [patch]);
 
@@ -95,8 +101,9 @@ export function useAttachments(chatId: string | null) {
   }, []);
 
   const markMissing = useCallback((attachmentId: string) => {
+    const error = stringsRef.current.labels.attachments.draftExpired;
     setDrafts((ds) => ds.map((d) => (d.attachment?.id === attachmentId
-      ? { ...d, status: 'missing', error: 'This image expired — remove it and attach again' }
+      ? { ...d, status: 'missing', error }
       : d)));
   }, []);
 

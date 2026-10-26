@@ -15,6 +15,7 @@ import { ErrorPart } from './error-part';
 import { TokenBar } from './token-bar';
 import { useSelectionActions, type SelectionActionsContextValue } from './selection/context';
 import { splitQuotedText } from '../model/selection';
+import { useChatLabels } from '../app/labels-context';
 
 export interface MessageItemProps {
   message: Message;
@@ -97,6 +98,8 @@ function UserText({ text, sel }: { text: string; sel: SelectionActionsContextVal
 export const MessageItem = memo(function MessageItem(p: MessageItemProps) {
   const { message: m, isStreaming } = p;
   const sel = useSelectionActions();
+  const { labels, format } = useChatLabels();
+  const l = labels.message;
   const [copied, setCopied] = useState(false);
   const textOnly = useMemo(
     () => m.parts.filter((x): x is Extract<Part, { type: 'text' }> => x.type === 'text').map((x) => x.text).join('\n'),
@@ -131,9 +134,9 @@ export const MessageItem = memo(function MessageItem(p: MessageItemProps) {
   const showConnectionLost = !isStreaming && m.finishReason === 'interrupted' && !hasErrorPart;
 
   return (
-    <article className={`group px-4 py-3 ${isUser ? 'bg-chat-surface/50' : ''}`} data-seq={m.seq} data-role={m.role} aria-label={`${m.role} message`}>
+    <article className={`group px-4 py-3 ${isUser ? 'bg-chat-surface/50' : ''}`} data-seq={m.seq} data-role={m.role} aria-label={l.ariaLabel(m.role)}>
       <div data-selection-ignore="" className={`mb-1 select-none font-mono text-[11px] uppercase tracking-wider ${isUser ? 'text-chat-muted' : 'text-chat-accent-strong'}`}>
-        {isUser ? 'you' : m.role === 'tool' ? 'tool' : (m.model ?? 'assistant')}
+        {isUser ? l.you : m.role === 'tool' ? l.tool : (m.model ?? l.assistant)}
       </div>
       {/* The selectable body: selection actions read offsets against this box. */}
       <div data-message-body="" data-message-id={m.id} data-role={m.role}>
@@ -182,7 +185,7 @@ export const MessageItem = memo(function MessageItem(p: MessageItemProps) {
       )}
       </div>
       {showConnectionLost && (
-        <ErrorPart part={{ type: 'error', code: 'internal', message: 'Connection lost' }} retryable={p.isLast} onRetry={p.onRetry} />
+        <ErrorPart part={{ type: 'error', code: 'internal', message: l.connectionLost }} retryable={p.isLast} onRetry={p.onRetry} />
       )}
       {isStreaming && m.role === 'assistant' && p.maxTokens !== undefined && (
         <TokenBar completion={m.usage?.completion ?? Math.ceil(textOnly.length / 4)} max={p.maxTokens} streaming />
@@ -190,14 +193,14 @@ export const MessageItem = memo(function MessageItem(p: MessageItemProps) {
       {!isStreaming && (
         <footer data-selection-ignore="" className="mt-1 flex select-none items-center gap-1 text-[11px] text-chat-dim opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
           {m.role === 'assistant' && m.usage && (
-            <span className="mr-2 font-mono" title="prompt / completion / reasoning tokens">
-              {m.usage.prompt} / {m.usage.completion} / {m.usage.reasoning ?? 0}
-              {m.usage.estimated ? ' (est.)' : ''}
-              {m.usage.costMicros !== undefined ? ` · $${(m.usage.costMicros / 1e6).toFixed(4)}` : ''}
+            <span className="mr-2 font-mono" title={l.usageTooltip}>
+              {format.count(m.usage.prompt)} / {format.count(m.usage.completion)} / {format.count(m.usage.reasoning ?? 0)}
+              {m.usage.estimated ? ` ${l.estimated}` : ''}
+              {m.usage.costMicros !== undefined ? ` · ${format.usd(m.usage.costMicros / 1e6, 4)}` : ''}
             </span>
           )}
           <IconBtn
-            label={copied ? 'Copied' : 'Copy'}
+            label={copied ? l.copied : l.copy}
             onClick={() => {
               void copyToClipboard(textOnly).then(() => {
                 setCopied(true);
@@ -213,16 +216,16 @@ export const MessageItem = memo(function MessageItem(p: MessageItemProps) {
             </IconBtn>
           )}
           {m.role === 'assistant' && p.isLast && p.onRegenerate && (
-            <IconBtn label="Regenerate" onClick={p.onRegenerate} disabled={p.turnInFlight}>
+            <IconBtn label={l.regenerate} onClick={p.onRegenerate} disabled={p.turnInFlight}>
               <RotateCcw className="h-3.5 w-3.5" aria-hidden />
             </IconBtn>
           )}
           {isUser && p.onEdit && (
-            <IconBtn label="Edit (forks the chat)" onClick={() => p.onEdit!(m.seq, textOnly)}>
+            <IconBtn label={l.edit} onClick={() => p.onEdit!(m.seq, textOnly)}>
               <Pencil className="h-3.5 w-3.5" aria-hidden />
             </IconBtn>
           )}
-          <IconBtn label="Fork here" onClick={() => p.onForkHere(m.seq)}>
+          <IconBtn label={l.forkHere} onClick={() => p.onForkHere(m.seq)}>
             <GitFork className="h-3.5 w-3.5" aria-hidden />
           </IconBtn>
         </footer>
